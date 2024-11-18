@@ -1,16 +1,18 @@
 import {
   CanActivate,
   ExecutionContext,
+  Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import { ClientProxy } from '@nestjs/microservices';
 import { Request } from 'express';
-import { envs } from 'src/config/envs';
+import { firstValueFrom } from 'rxjs';
+import { NATS_SERVICES } from 'src/config';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(@Inject(NATS_SERVICES) private readonly client: ClientProxy) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
@@ -20,12 +22,12 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Token no encontrado');
     }
     try {
+      const { user, token: newToken } = await firstValueFrom(
+        this.client.send('verify_token', token),
+      );
 
-      const payload = await this.jwtService.verifyAsync(token, {
-        secret: envs.jwt_secret,
-      });
-      request['user'] = payload;
-      
+      request['user'] = user;
+      request['token'] = newToken;
     } catch {
       throw new UnauthorizedException();
     }

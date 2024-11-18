@@ -17,7 +17,7 @@ import { NATS_SERVICES } from 'src/config';
 import { CreateSucursalDto } from 'src/common/dto/create-sucursal.dto';
 import { catchError } from 'rxjs';
 import { AuthGuard } from './guards/auth.guard';
-import { User } from './decorators';
+import { Token, User } from './decorators';
 import { CurrentUser } from './interfaces/current-user.interface';
 
 @Controller('auth')
@@ -43,13 +43,8 @@ export class AuthController {
 
   @UseGuards(AuthGuard)
   @Get('verify-token')
-  async verifyToken(@User() user: CurrentUser, ) {
-    return user;
-
-    // poder retornar user y token de la request
-    
-    // console.log()
-    // return this.client.send('verify_token', token);
+  async verifyToken(@User() user: CurrentUser, @Token() token: string) {
+    return { user, token };
   }
 
   @Post('register_sucursal')
