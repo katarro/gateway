@@ -6,12 +6,8 @@ import {
   IsStrongPassword,
   Length,
 } from 'class-validator';
+import { Rol } from 'src/auth/enums';
 
-enum Rol {
-  Admin = 'ADMIN',
-  Cliente = 'CLIENTE',
-  Ejecutivo = 'EJECUTIVO',
-}
 
 export class RegisterDto {
   @IsString()
