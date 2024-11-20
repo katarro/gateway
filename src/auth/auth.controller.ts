@@ -26,7 +26,7 @@ import { ChangePasswordDto } from 'src/common/dto/change-password.dt';
 import { Roles } from './decorators/roles.decorator';
 import { Rol } from './enums';
 import { RolesGuard } from './guards/roles.guard';
-import { ForgotEmailDto } from 'src/common/dto/forgot-email.dto';
+import { ForgotPassword } from 'src/common/dto/forgot-password.dto';
 
 @Controller('auth')
 @UseGuards(RolesGuard)
@@ -78,9 +78,8 @@ export class AuthController {
     return this.sendMessage('change.password', { id, changePasswordDto });
   }
 
-  @UseGuards(AuthGuard)
   @Post('usuarios/olvidar-contrasena')
-  async olvidarContrasena(@Body() email: ForgotEmailDto) {
-    return this.sendMessage('forgot.password', email);
+  async olvidarContrasena(@Body() correo: ForgotPassword) {
+    return this.sendMessage('forgot.password', correo);
   }
 }
