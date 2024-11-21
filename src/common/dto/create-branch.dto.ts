@@ -1,21 +1,21 @@
 import { Type } from 'class-transformer';
 import { IsBoolean, IsDate, IsNotEmpty, IsString } from 'class-validator';
 
-export class CreateSucursalDto {
+export class CreateBranchDto {
   @IsString()
   @IsNotEmpty()
-  nombre: string;
+  name: string;
 
   @IsString()
   @IsNotEmpty()
-  direccion: string;
+  address: string;
 
   @IsDate()
   @IsNotEmpty()
    @Type(() => Date)
-  horario: Date;
+  schedule: Date;
 
   @IsBoolean()
   @IsNotEmpty()
-  estado: boolean;
+  status: boolean;
 }

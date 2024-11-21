@@ -1,7 +1,7 @@
 import { IsNotEmpty, IsString } from 'class-validator';
 
-export class ForgotPassword {
+export class ResetPasswordDto {
   @IsString()
   @IsNotEmpty()
-  correo: string;
+  email: string;
 }

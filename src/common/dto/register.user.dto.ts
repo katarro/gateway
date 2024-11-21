@@ -6,24 +6,24 @@ import {
   IsStrongPassword,
   Length,
 } from 'class-validator';
-import { Rol } from 'src/auth/enums';
+import { Role } from 'src/auth/enums';
 
 
-export class RegisterDto {
+export class RegisterUserDto {
   @IsString()
   @Length(3, 20)
-  nombre: string;
+  name: string;
 
   @IsEmail()
-  correo: string;
+  email: string;
 
   @IsStrongPassword({
     minSymbols: 0,
     minLength: 8,
   })
-  contrasena: string;
+  password: string;
 
-  @IsEnum(Rol)
+  @IsEnum(Role)
   @IsOptional()
-  rol?: Rol;
+  role?: Role;
 }

@@ -9,7 +9,7 @@ import { Reflector } from '@nestjs/core';
 import { firstValueFrom } from 'rxjs';
 import { ClientProxy } from '@nestjs/microservices';
 import { ROLES_KEY } from '../decorators/roles.decorator';
-import { Rol } from '../enums';
+import { Role } from '../enums';
 import { Request } from 'express';
 
 @Injectable()
@@ -20,7 +20,7 @@ export class RolesGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requiredRoles = this.reflector.getAllAndOverride<Rol[]>(ROLES_KEY, [
+    const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
@@ -41,13 +41,13 @@ export class RolesGuard implements CanActivate {
     try {
       // Verifica el token usando el servicio NATS
       const { user } = await firstValueFrom(
-        this.client.send('verify_token', token),
+        this.client.send('verify.token', token),
       );
 
-      console.log('Usuario obtenido:', user.rol);
+      console.log('Usuario obtenido:', user.role);
 
       // Validar si el rol del usuario coincide con los roles requeridos
-      return requiredRoles.some((role) => user.rol === role);
+      return requiredRoles.some((role) => user.role === role);
 
       
     } catch (error) {

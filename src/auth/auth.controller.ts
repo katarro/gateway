@@ -3,30 +3,27 @@ import {
   Body,
   Controller,
   Get,
-  HttpCode,
-  HttpStatus,
   Inject,
   Param,
   ParseIntPipe,
   Patch,
   Post,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
-import { RegisterDto } from '../common/dto/register-auth.dto';
-import { LoginDto } from '../common/dto/login-auth.dto';
+import { RegisterUserDto } from '../common/dto/register.user.dto';
+import { LoginDto } from '../common/dto/login.dto';
 import { NATS_SERVICES } from 'src/config';
-import { CreateSucursalDto } from 'src/common/dto/create-sucursal.dto';
-import { catchError, map, throwError } from 'rxjs';
+import { CreateBranchDto } from 'src/common/dto/create-branch.dto';
+import { catchError, throwError } from 'rxjs';
 import { AuthGuard } from './guards/auth.guard';
 import { Token, User } from './decorators';
 import { CurrentUser } from './interfaces/current-user.interface';
-import { ChangePasswordDto } from 'src/common/dto/change-password.dt';
+import { ChangePasswordDto } from 'src/common/dto/change-password.dto';
 import { Roles } from './decorators/roles.decorator';
-import { Rol } from './enums';
+import { Role } from './enums';
 import { RolesGuard } from './guards/roles.guard';
-import { ForgotPassword } from 'src/common/dto/forgot-password.dto';
+import { ResetPasswordDto } from 'src/common/dto/reset-password.dto';
 
 @Controller('auth')
 @UseGuards(RolesGuard)
@@ -42,8 +39,8 @@ export class AuthController {
   }
 
   @Post('usuarios/registrar')
-  registerUser(@Body() registerDto: RegisterDto) {
-    return this.sendMessage('register.user.auth', registerDto);
+  registerUser(@Body() registerUserDto: RegisterUserDto) {
+    return this.sendMessage('register.user.auth', registerUserDto);
   }
 
   @Post('usuarios/iniciar-sesion')
@@ -58,13 +55,13 @@ export class AuthController {
   }
 
   @Post('sucursales/registrar')
-  @Roles(Rol.Admin)
+  @Roles(Role.Admin)
   async registrarSucursal(
-    @Body() createSucursalDto: CreateSucursalDto,
+    @Body() createBranchDto: CreateBranchDto,
     @Token() token: string,
   ) {
     return this.sendMessage('register.sucursal.auth', {
-      createSucursalDto,
+      createBranchDto,
       token,
     });
   }
@@ -79,7 +76,7 @@ export class AuthController {
   }
 
   @Post('usuarios/olvidar-contrasena')
-  async olvidarContrasena(@Body() correo: ForgotPassword) {
-    return this.sendMessage('forgot.password', correo);
+  async olvidarContrasena(@Body() correo: ResetPasswordDto) {
+    return this.sendMessage('reset.password', correo);
   }
 }

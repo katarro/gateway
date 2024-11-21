@@ -15,28 +15,28 @@ enum Role {
   Ejecutivo = 'ejecutivo',
 }
 
-export class UpdateDto {
+export class UpdateUserDto {
   
   @IsUUID()
   id: string;
 
   @IsString()
   @Length(3, 20)
-  nombre: string;
+  name: string;
 
   @IsEmail()
-  correo: string;
+  email: string;
 
   @IsStrongPassword({
     minSymbols: 0,
     minLength: 8,
   })
-  contrasena: string;
+  password: string;
 
   @IsEnum(Role)
-  rol: Role;
+  role: Role;
 
   @IsNumber()
   @IsPositive()
-  sucursal_id: number;
+  branch_id: number;
 }
