@@ -1,6 +1,6 @@
 import { IsEnum, IsNumber, IsPositive } from 'class-validator';
 import { Timestamp } from 'rxjs';
-import { RegistrationStatus } from 'src/common/dto/branch-status.dto';
+import { RegistrationStatus } from 'src/auth/common/dto/branch-status.dto';
 
 export class CreateNumberRecordDto {
   @IsNumber()

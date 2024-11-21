@@ -17,7 +17,7 @@ import { NATS_SERVICES } from 'src/config';
 import { catchError, throwError } from 'rxjs';
 import { ClientProxy } from '@nestjs/microservices';
 import { Roles } from './decorators/roles.decorator';
-import { CreateBranchDto, UpdateBranchDto } from 'src/common/dto';
+import { CreateBranchDto, UpdateBranchDto } from 'src/auth/common/dto';
 import { AuthGuard } from './guards/auth.guard';
 
 @Controller('auth/sucursales')

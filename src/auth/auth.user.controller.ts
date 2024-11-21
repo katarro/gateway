@@ -16,7 +16,7 @@ import {
   ChangePasswordDto,
   ResetPasswordDto,
   LoginDto,
-} from '../common/dto';
+} from './common/dto';
 import { NATS_SERVICES } from 'src/config';
 import { catchError, throwError } from 'rxjs';
 import { AuthGuard } from './guards/auth.guard';
