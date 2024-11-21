@@ -1,0 +1,7 @@
+Rutas:
+
+Listar sucursales:
+/fila/obtener-sucursales
+
+Enrutar a una fila de una sucursales
+/fila/ingresar/:id

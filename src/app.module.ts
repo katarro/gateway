@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from './auth/auth.module';
-import { TestMs1Module } from './test-ms-1/test-ms-1.module';
+import { QueueRouterModule } from './queue-router/queue-router.module';
 
 @Module({
-  imports: [AuthModule, TestMs1Module],
+  imports: [AuthModule, QueueRouterModule],
   controllers: [],
   providers: []
 })

@@ -14,12 +14,10 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
+      transform: true
     }),
   );
 
-  
-
-  
   await app.listen(envs.port);
   logger.log(`Corriendo en el puerto ${envs.port}`);
 }

@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
-import { TestMs1Controller } from './test-ms-1.controller';
+import { QueueRouterController } from './queue-router.controller';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { NATS_SERVICES } from 'src/config';
 import { envs } from 'src/config/envs';
 
 @Module({
-  controllers: [TestMs1Controller],
+  controllers: [QueueRouterController],
   providers: [],
   imports: [
     ClientsModule.register([
@@ -19,4 +19,4 @@ import { envs } from 'src/config/envs';
     ]),
   ],
 })
-export class TestMs1Module {}
+export class QueueRouterModule {}

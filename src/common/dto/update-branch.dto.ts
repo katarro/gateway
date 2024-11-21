@@ -1,7 +1,7 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDate, IsNotEmpty, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsString, IsDate } from 'class-validator';
 
-export class CreateBranchDto {
+export class UpdateBranchDto {
   @IsString()
   @IsNotEmpty()
   name: string;
@@ -11,8 +11,8 @@ export class CreateBranchDto {
   address: string;
 
   @IsDate()
+  @Type(() => Date) 
   @IsNotEmpty()
-  @Type(() => Date)
   schedule: Date;
 
   @IsBoolean()
