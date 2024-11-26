@@ -5,3 +5,9 @@ Listar sucursales:
 
 Enrutar a una fila de una sucursales
 /fila/ingresar/:id
+
+
+
+COLA:
+
+1. Unirse a la cola

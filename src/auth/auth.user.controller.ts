@@ -1,28 +1,32 @@
 import {
-  BadRequestException,
-  Body,
-  Controller,
   Get,
-  Inject,
-  Param,
-  ParseIntPipe,
-  Patch,
+  Body,
   Post,
+  Patch,
+  Param,
+  Inject,
   UseGuards,
+  Controller,
+  ParseIntPipe,
+  BadRequestException,
 } from '@nestjs/common';
-import { ClientProxy } from '@nestjs/microservices';
 import {
-  RegisterUserDto,
-  ChangePasswordDto,
-  ResetPasswordDto,
   LoginDto,
-} from './common/dto';
+  UpdateUserDto,
+  UpdateRoleDto,
+  RegisterUserDto,
+  ResetPasswordDto,
+  ChangePasswordDto,
+} from '../common/dto';
+import { Role } from './enums';
+import { Token, User } from './decorators';
 import { NATS_SERVICES } from 'src/config';
 import { catchError, throwError } from 'rxjs';
 import { AuthGuard } from './guards/auth.guard';
-import { Token, User } from './decorators';
-import { CurrentUser } from './interfaces/current-user.interface';
 import { RolesGuard } from './guards/roles.guard';
+import { ClientProxy } from '@nestjs/microservices';
+import { Roles } from './decorators/roles.decorator';
+import { CurrentUser } from './interfaces/current-user.interface';
 
 @Controller('auth/usuarios')
 @UseGuards(RolesGuard)
@@ -43,19 +47,19 @@ export class AuthUserController {
   }
 
   @Post('iniciar-sesion')
-  iniciarSesion(@Body() loginDto: LoginDto) {
+  login(@Body() loginDto: LoginDto) {
     return this.sendMessage('login.user.auth', loginDto);
   }
 
   @UseGuards(AuthGuard)
   @Get('verificar-token')
-  async verificarToken(@User() user: CurrentUser, @Token() token: string) {
+  async verifyToken(@User() user: CurrentUser, @Token() token: string) {
     return { user, token };
   }
 
-  @UseGuards(AuthGuard)
+  // @UseGuards(AuthGuard)
   @Patch('cambiar-contrasena/:id')
-  async cambiarContrasena(
+  async changePassword(
     @Param('id', ParseIntPipe) id: number,
     @Body() changePasswordDto: ChangePasswordDto,
   ) {
@@ -63,7 +67,41 @@ export class AuthUserController {
   }
 
   @Post('olvidar-contrasena')
-  async olvidarContrasena(@Body() correo: ResetPasswordDto) {
+  async resetPassword(@Body() correo: ResetPasswordDto) {
     return this.sendMessage('reset.password', correo);
+  }
+
+  // @UseGuards(AuthGuard)
+  // @Roles(Role.Admin)
+  @Get('listar')
+  async getUsers() {
+    return this.sendMessage('get.users', {});
+  }
+
+  // @UseGuards(AuthGuard)
+  // @Roles(Role.Admin)
+  @Get('usuario/:id')
+  async getUserById(@Param('id', ParseIntPipe) id: number) {
+    return this.sendMessage('get.user.by.id', { id });
+  }
+
+  // @UseGuards(AuthGuard)
+  @Patch('actualizar/:id')
+  async actualizarUsuario(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateUserDto: UpdateUserDto,
+  ) {
+    return this.sendMessage('update.user', { id, updateUserDto });
+  }
+
+  // @UseGuards(AuthGuard)
+  // @Roles(Role.Admin)
+  @Patch('actualizar-rol/:id')
+  async actualizarRol(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateRoleDto: UpdateRoleDto,
+  ) {
+    console.log(updateRoleDto);
+    return this.sendMessage('update.role', { id, updateRoleDto });
   }
 }
