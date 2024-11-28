@@ -1,5 +1,11 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDate, IsNotEmpty, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsDate,
+  IsNotEmpty,
+  IsNumber,
+  IsString,
+} from 'class-validator';
 
 export class CreateBranchDto {
   @IsString()
@@ -22,4 +28,8 @@ export class CreateBranchDto {
   @IsBoolean()
   @IsNotEmpty()
   available: boolean;
+
+  @IsNumber()
+  @IsNotEmpty()
+  current_attending_number: number;
 }

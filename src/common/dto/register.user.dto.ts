@@ -1,13 +1,13 @@
 import {
   IsEmail,
   IsEnum,
+  IsNumber,
   IsOptional,
   IsString,
   IsStrongPassword,
   Length,
 } from 'class-validator';
 import { Role } from 'src/auth/enums';
-
 
 export class RegisterUserDto {
   @IsString()
@@ -26,4 +26,8 @@ export class RegisterUserDto {
   @IsEnum(Role)
   @IsOptional()
   role?: Role;
+
+  @IsNumber()
+  @IsOptional()
+  branch_id?: number;
 }

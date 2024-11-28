@@ -1,36 +1,28 @@
 import {
-  BadRequestException,
-  Body,
-  Controller,
-  Delete,
   Get,
-  Inject,
-  Param,
-  ParseIntPipe,
+  Body,
   Post,
-  UseGuards,
+  Param,
   Patch,
+  Inject,
+  Delete,
+  UseGuards,
+  Controller,
+  ParseIntPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { Role } from './enums';
 import { Token } from './decorators';
 import { NATS_SERVICES } from 'src/config';
 import { catchError, throwError } from 'rxjs';
+import { AuthGuard } from './guards/auth.guard';
 import { ClientProxy } from '@nestjs/microservices';
 import { Roles } from './decorators/roles.decorator';
 import { CreateBranchDto, UpdateBranchDto } from 'src/common/dto';
-import { AuthGuard } from './guards/auth.guard';
 
 @Controller('auth/sucursales')
 export class AuthBranchController {
   constructor(@Inject(NATS_SERVICES) private readonly client: ClientProxy) {}
-
-  private handleError(error: any) {
-    return throwError(() => new BadRequestException(error.message || error, error.status));
-  }
-
-  private sendMessage(pattern: string, data: any) {
-    return this.client.send(pattern, data).pipe(catchError(this.handleError));
-  }
 
   // @UseGuards(AuthGuard)
   // @Roles(Role.Admin)
@@ -58,7 +50,7 @@ export class AuthBranchController {
   }
 
   // @UseGuards(AuthGuard)
-  // @Roles(Role.Admin)
+  @Roles(Role.Admin)
   @Delete('eliminar/:id')
   deleteBranch(@Param('id', ParseIntPipe) id: number) {
     return this.sendMessage('delete.branch', id);
@@ -74,5 +66,13 @@ export class AuthBranchController {
     return this.sendMessage('update.branch', { id, updateBranchDto });
   }
 
+  private handleError(error: any) {
+    return throwError(
+      () => new BadRequestException(error.message || error, error.status),
+    );
+  }
 
+  private sendMessage(pattern: string, data: any) {
+    return this.client.send(pattern, data).pipe(catchError(this.handleError));
+  }
 }

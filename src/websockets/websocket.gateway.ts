@@ -1,33 +1,31 @@
 import {
-  WebSocketGateway,
-  WebSocketServer,
-  MessageBody,
-  SubscribeMessage,
   ConnectedSocket,
+  WebSocketServer,
+  WebSocketGateway,
+  SubscribeMessage,
 } from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
+import { ClientProxy } from '@nestjs/microservices';
+import { WebsocketService } from './websocket.service';
+import { Inject, Logger, OnModuleInit } from '@nestjs/common';
 import {
   NATS_SERVICES,
-  WS_CHECK_USER_IN_QUEUE,
+  WS_GET_NEW_NUMBER,
   WS_JOIN_QUEUE,
   WS_USER_LEFT_QUEUE,
 } from 'src/config';
 import { firstValueFrom } from 'rxjs';
-import { Server, Socket } from 'socket.io';
-import { ClientProxy } from '@nestjs/microservices';
-import { Inject, Logger, OnModuleInit } from '@nestjs/common';
 
 @WebSocketGateway({
   namespace: '/api/ws/cola',
-  cors: {
-    origin: '*',
-  },
+  cors: { origin: '*' },
 })
 export class WebsocketGateway implements OnModuleInit {
   private static isInitialized = false;
   constructor(
     @Inject(NATS_SERVICES) private readonly clientNats: ClientProxy,
+    private readonly wsService: WebsocketService,
   ) {}
-
   private readonly logger = new Logger('WS-QueueGateway');
 
   @WebSocketServer()
@@ -47,148 +45,105 @@ export class WebsocketGateway implements OnModuleInit {
         this.logger.debug(`Cliente desconectado: ${socket.id} `);
       });
     });
+
+    this.wsService.setServer(this.server);
   }
-
-  // Se debe emitir un evento del cleinte para poder salir de la fila
-  // luego gestionar la logica
-  @SubscribeMessage(WS_USER_LEFT_QUEUE) // Envio este evento
-  async userLeftQueue(@ConnectedSocket() client: Socket) {
-    // data lo recibe como string
-    const branchId = client.handshake.query.branchId as string;
-    const userId = client.handshake.query.userId as string;
-
-
-    console.log(`BranchId: ${branchId} esde typo: `, typeof branchId);
-    console.log(`userId: ${userId} esde typo: `, typeof userId);
-
-    this.server.to('branch-1').emit('branch-1', 'DATA'); // Escucho este evento
-  }
-
 
   // Cambiar y recibir la data por parametro
   @SubscribeMessage(WS_JOIN_QUEUE)
-  async handleJoinQueue(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: string,
-  ) {
-    let parsedData: { branchId: number; userId: number };
+  async handleJoinQueue(@ConnectedSocket() client: Socket) {
+    if (!this.server) {
+      this.logger.error('Socket server no está inicializado');
+      return;
+    }
+    return this.wsService.handleJoinQueue(client);
+  }
 
-    try {
-      parsedData = JSON.parse(data);
-    } catch (error) {
-      return this.handleError(client, 'Datos inválidos, no se pudo procesar.');
+  @SubscribeMessage(WS_USER_LEFT_QUEUE)
+  async handleLeftQueue(@ConnectedSocket() client: Socket) {
+    if (!this.server) {
+      this.logger.error('Socket server no está inicializado');
+      return;
     }
 
-    const { branchId, userId } = parsedData;
+    const { branchId, userId } = client.handshake.query as {
+      branchId: string;
+      userId: string;
+    };
 
     if (!branchId || !userId) {
-      return this.handleError(client, 'Datos incompletos.');
-    }
-
-    if (!(await this.checkBranchExists(client, branchId))) {
+      this.logger.error('Branch ID or User ID no encontrado');
       return;
     }
 
-    if (await this.isUserInQueue(client, branchId, userId)) {
-      return;
-    }
+    const room = `branch-${branchId}`;
+    const intBranchId = parseInt(branchId, 10);
+    const intUserId = parseInt(userId, 10);
 
     try {
-      await firstValueFrom(
-        this.clientNats.send('join.queue', { branchId, userId }),
-      );
-
-      let room: string = `branch-${branchId}`;
-      console.log(`Room: ${room}`);
-
-      client.join(room);
-      this.logger.debug(
-        `Cliente ${client.id}, usuario ${userId}, se unió a la sala branch: ${branchId}`,
-      );
+      await Promise.all([
+        this.wsService.handleRecordNumber(intBranchId, intUserId),
+        this.wsService.handleLeftQueueDataBase(intBranchId, intUserId),
+        this.wsService.handleLeftQueueRoom(client, intUserId, room),
+        this.wsService.handleEventEmit(room, intBranchId, intUserId),
+      ]);
     } catch (error) {
-      this.handleError(
-        client,
-        `Error al guardar usuario en cola y/o room: ${error.message}`,
-      );
+      this.logger.error('Error handling left queue', error);
     }
   }
 
-  private async checkBranchExists(
-    client: Socket,
-    branchId: number,
-  ): Promise<boolean> {
+  // El servidor emite el evento 'queue.updated'
+  // el cliente recibe ese evento y luego envia un evento al servidor 'get.new.number'
+  // el servidor responde con el nuevo numero de la cola
+  @SubscribeMessage(WS_GET_NEW_NUMBER)
+  async handleGetNewNumber(@ConnectedSocket() client: Socket) {
     try {
-      const branchExists = await firstValueFrom(
-        this.clientNats.send('check.branch.exists', { branchId }),
-      );
+      const { branchId, userId } = client.handshake.query as {
+        branchId: string;
+        userId: string;
+      };
 
-      if (!branchExists) {
-        this.handleError(client, 'Sucursal no existe.');
-        return false;
-      }
-      return true;
-    } catch (error) {
-      this.handleError(
-        client,
-        'Error al verificar la existencia de la sucursal.',
-      );
-      return false;
-    }
-  }
+      const intBranchId = parseInt(branchId, 10);
+      const intUserId = parseInt(userId, 10);
 
-  private async isUserInQueue(
-    client: Socket,
-    branchId: number,
-    userId: number,
-  ): Promise<boolean> {
-    try {
-      const userInQueue = await firstValueFrom(
-        this.clientNats.send(WS_CHECK_USER_IN_QUEUE, {
-          branchId,
-          userId,
+      // Obtener el nuevo número del usuario desde la base de datos
+      const newNumber = await firstValueFrom(
+        this.clientNats.send('get.user.new.number', {
+          branchId: intBranchId,
+          userId: intUserId,
         }),
       );
+      const currentNumber = newNumber.data.current_number;
 
-      if (userInQueue) {
-        this.handleError(client, 'Usuario ya está en la cola.');
-        return true;
-      }
-      return false;
+      console.log(
+        `Nuevo numero es: ${currentNumber} para el usuario: ${userId}`,
+      );
+
+      // Enviar el nuevo número al cliente
+      client.emit('new.number.received', {
+        branchId,
+        userId,
+        currentNumber,
+      });
     } catch (error) {
-      this.handleError(client, error.message);
-      return true;
+      this.logger.error('Error al obtener el nuevo número', error);
+      client.emit('error', {
+        message: 'No se pudo obtener el nuevo número',
+      });
     }
   }
 
-  private handleError(socket: Socket, message: string) {
-    this.logger.error(message);
-    socket.emit('error', { message });
-  }
+  @SubscribeMessage('executive.next.number')
+  async handleNextNumber(@ConnectedSocket() client: Socket) {
+    const { branchId } = client.handshake.query as {
+      branchId: string;
+    };
 
-  public emitEventUserLeftQueue(event: string, data: { branchId: number }) {
-    const { branchId } = data;
-    const dataParsed = JSON.stringify(data);
+    const intBranchId = parseInt(branchId, 10);
 
-    console.log(`Event: ${event} Data parsed: ${dataParsed} `);
-    this.server.to(`branch-${branchId}`).emit(event, dataParsed);
-  }
+    // avanzar el numero del branch
+    this.wsService.handleNextNumber(client, intBranchId);
 
-  // Eliminar al cliente del room correspondiente
-  public removeFromQueue(branchId: number, userId: number) {
-    const room = `branch-${branchId}`;
-    this.server.socketsLeave(room);
-    this.logger.warn(`Usuario ${userId} eliminado del room: ${room}`);
-  }
-
-  // Emitir evento para actualizar la cola
-  public async emitToQueue(branchId: number, event: string, data: any) {
-    this.logger.log(`Enviando evento "${event}" a branch-${branchId} ...`);
-    this.server.to(`branch-${branchId}`).emit(event, data);
-  }
-
-  @SubscribeMessage('test')
-  public testEvent(@MessageBody() data: any) {
-    console.log(data);
-    this.server.emit('listen.Event', 'data');
+    // emite el evento desde servidor hacia cleintes 'que'
   }
 }

@@ -1,6 +1,7 @@
 export * from './login.dto';
 export * from './join-queue.dto';
 export * from './update-role.dto';
+export * from './user-branch.dto';
 export * from './update-user.dto';
 export * from './update-branch.dto';
 export * from './branch-status.dto';
