@@ -3,6 +3,7 @@ export * from './join-queue.dto';
 export * from './update-role.dto';
 export * from './user-branch.dto';
 export * from './update-user.dto';
+export * from './opinion-user-dto';
 export * from './update-branch.dto';
 export * from './branch-status.dto';
 export * from './create-branch.dto';

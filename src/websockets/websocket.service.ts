@@ -111,9 +111,9 @@ export class WebsocketService {
     });
   }
 
-  async handleNextNumber(client: Socket, branchId: number) {
+  async handleNextNumber(client: Socket, branchId: number, userId: number) {
     return await firstValueFrom(
-      this.clientNats.send('next.number.branch', { branchId }),
+      this.clientNats.send('next.number.branch', { branchId, userId }),
     );
   }
 }

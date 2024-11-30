@@ -1,6 +1,7 @@
 import {
   IsEmail,
   IsEnum,
+  IsNumber,
   IsOptional,
   IsString,
   IsStrongPassword,
@@ -27,4 +28,8 @@ export class UpdateUserDto {
   @IsEnum(Role)
   @IsOptional()
   role?: Role;
+
+  @IsNumber()
+  @IsOptional()
+  branch_id?: number;
 }

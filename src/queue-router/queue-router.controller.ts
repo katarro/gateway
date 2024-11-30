@@ -8,6 +8,8 @@ import {
   ParseIntPipe,
   BadRequestException,
   Query,
+  Post,
+  Body,
 } from '@nestjs/common';
 import { Role } from 'src/auth/enums';
 import { NATS_SERVICES } from 'src/config';
@@ -25,13 +27,20 @@ export class QueueRouterController {
   // @Roles(Role.Admin)
   @Get('obtener-colas')
   getQueues(@Query('page') page: string, @Query('limit') limit: string) {
-    const pageNumber = parseInt(page, 10) || 1; 
+    const pageNumber = parseInt(page, 10) || 1;
     const limitNumber = parseInt(limit, 10) || 10;
 
     return this.sendMessage('get.queues', {
       page: pageNumber,
       limit: limitNumber,
     });
+  }
+
+  @Post('opinion/:userId')
+  giveOpinion(@Param('userId', ParseIntPipe) userId: number, 
+  @Body() opinionDto: { opinion: string }) 
+  {
+    return this.sendMessage('give.opinion', { opinion: opinionDto.opinion, userId });
   }
 
   @UseGuards(AuthGuard)

@@ -114,6 +114,7 @@ export class WebsocketGateway implements OnModuleInit {
         }),
       );
       const currentNumber = newNumber.data.current_number;
+      const message = newNumber.data.message
 
       console.log(
         `Nuevo numero es: ${currentNumber} para el usuario: ${userId}`,
@@ -124,6 +125,7 @@ export class WebsocketGateway implements OnModuleInit {
         branchId,
         userId,
         currentNumber,
+        message        
       });
     } catch (error) {
       this.logger.error('Error al obtener el nuevo número', error);
@@ -135,15 +137,39 @@ export class WebsocketGateway implements OnModuleInit {
 
   @SubscribeMessage('executive.next.number')
   async handleNextNumber(@ConnectedSocket() client: Socket) {
-    const { branchId } = client.handshake.query as {
+    const { branchId, userId } = client.handshake.query as {
       branchId: string;
+      userId: string;
     };
 
     const intBranchId = parseInt(branchId, 10);
+    const intUserId = parseInt(userId, 10);
 
-    // avanzar el numero del branch
-    this.wsService.handleNextNumber(client, intBranchId);
+    try {
+      // avanzar el numero del branch
+      const result = await this.wsService.handleNextNumber(
+        client,
+        intBranchId,
+        intUserId,
+      );
 
-    // emite el evento desde servidor hacia cleintes 'que'
+      // Emitir el evento desde el servidor hacia los clientes en el room
+      const room = `branch-${branchId}`;
+      this.server.to(room).emit('queue.updated', {
+        message: 'Número avanzado',
+        current_number: result.data.current_number,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Error avanzando número en la sucursal ${intBranchId}`,
+        error,
+      );
+
+      // Notificar al cliente en caso de error
+      client.emit('error', {
+        message:
+          'No se pudo avanzar el número en la sucursal. Inténtalo más tarde.',
+      });
+    }
   }
 }
