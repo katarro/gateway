@@ -1,0 +1,9 @@
+export const ERROR = 'error';
+export const RECONNECTED = 'reconnected';
+export const JOIN_QUEUE = 'ws.join.queue';
+export const QUEUE_UPDATED = 'queue.updated';
+export const GET_NEW_NUMBER = 'get.new.number';
+export const USER_LEFT_QUEUE = 'ws.user.left.queue';
+export const NEW_NUMBER_RECIVED = 'new.number.received';
+export const CHECK_USER_IN_QUEUE = 'check.user.in.queue';
+export const EXECUTIVE_NEXT_NUMBER = 'executive.next.number';

@@ -37,10 +37,19 @@ export class QueueRouterController {
   }
 
   @Post('opinion/:userId')
-  giveOpinion(@Param('userId', ParseIntPipe) userId: number, 
-  @Body() opinionDto: { opinion: string }) 
-  {
-    return this.sendMessage('give.opinion', { opinion: opinionDto.opinion, userId });
+  giveOpinion(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Body() opinionDto: { opinion: string },
+  ) {
+    return this.sendMessage('give.opinion', {
+      opinion: opinionDto.opinion,
+      userId,
+    });
+  }
+
+  @Get('opiniones')
+  getOpinions() {
+    return this.sendMessage('get.opinions', {});
   }
 
   @UseGuards(AuthGuard)

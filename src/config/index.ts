@@ -1,2 +1,2 @@
 export * from './services';
-export * from './events';
+export * from './websocket-events';

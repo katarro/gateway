@@ -1,1 +1,2 @@
-export const NATS_SERVICES = 'NATS_SERVICES'
+export const NATS_SERVICES = 'NATS_SERVICES';
+export const CACHE_MANAGER = 'CACHE_MANAGER';
