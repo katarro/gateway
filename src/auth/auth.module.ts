@@ -6,10 +6,12 @@ import { envs } from 'src/config/envs';
 import { NATS_SERVICES } from 'src/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuthGuard } from './guards/auth.guard';
+import { GoogleOauthGuard } from './guards/google-oauth.guard';
+import { GoogleStrategy } from './strategies/google.strategy';
 
 @Module({
   controllers: [AuthUserController, AuthBranchController],
-  providers: [JwtService, AuthGuard],
+  providers: [JwtService, AuthGuard, GoogleOauthGuard, GoogleStrategy],
   imports: [
     ClientsModule.register([
       {

@@ -9,6 +9,8 @@ import {
   Controller,
   ParseIntPipe,
   BadRequestException,
+  Req,
+  Res,
 } from '@nestjs/common';
 import {
   LoginDto,
@@ -21,31 +23,62 @@ import {
 import { Role } from './enums';
 import { Token, User } from './decorators';
 import { NATS_SERVICES } from 'src/config';
-import { catchError, throwError } from 'rxjs';
+import { catchError, firstValueFrom, throwError } from 'rxjs';
 import { AuthGuard } from './guards/auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { ClientProxy } from '@nestjs/microservices';
 import { Roles } from './decorators/roles.decorator';
 import { CurrentUser } from './interfaces/current-user.interface';
+import { GoogleOauthGuard } from './guards/google-oauth.guard';
+import { Public } from './decorators/public.decorator';
 
 @Controller('auth/usuarios')
 @UseGuards(RolesGuard)
 export class AuthUserController {
   constructor(@Inject(NATS_SERVICES) private readonly client: ClientProxy) {}
 
-  private handleError(error: any) {
-    return throwError(() => new BadRequestException(error.message || error));
+  @Public()
+  @UseGuards(GoogleOauthGuard)
+  @Get('google/login')
+  async googleLogin() {
+    // return this.sendMessage('auth.google', {});
   }
 
-  private sendMessage(pattern: string, data: any) {
-    return this.client.send(pattern, data).pipe(catchError(this.handleError));
+  @Public()
+  @Get('google/callback')
+  @UseGuards(GoogleOauthGuard)
+  async googleAuthCallback(@Req() req: any, @Res() res: any) {
+    const user = req.user;
+    if (!user?.email) {
+      return res.status(400).json({ message: 'Autenticación fallida' });
+    }
+
+    try {
+      // Convertir el Observable en un valor con firstValueFrom
+      const jwt = await firstValueFrom(this.sendMessage('auth.google', user));
+
+      // Redirige al cliente con el token JWT
+      // res.redirect(`/dashboard?token=${jwt}`);
+
+      // Devuelve el token JWT en la respuesta
+      return res.status(200).json({
+        message: 'Inicio de sesión exitoso',
+        access_token: jwt,
+      });
+      // Luego ese token se valida en el frontend e inicia sesion.
+    } catch (error) {
+      console.error('Error en googleAuthCallback:', error);
+      return res.status(500).json({ message: 'Error en la autenticación' });
+    }
   }
 
+  @Public()
   @Post('registrar')
   registerUser(@Body() registerUserDto: RegisterUserDto) {
     return this.sendMessage('register.user.auth', registerUserDto);
   }
 
+  @Public()
   @Post('iniciar-sesion')
   login(@Body() loginDto: LoginDto) {
     return this.sendMessage('login.user.auth', loginDto);
@@ -66,6 +99,7 @@ export class AuthUserController {
     return this.sendMessage('change.password', { id, changePasswordDto });
   }
 
+  @Public()
   @Post('olvidar-contrasena')
   async resetPassword(@Body() correo: ResetPasswordDto) {
     return this.sendMessage('reset.password', correo);
@@ -103,5 +137,13 @@ export class AuthUserController {
   ) {
     console.log(updateRoleDto);
     return this.sendMessage('update.role', { id, updateRoleDto });
+  }
+
+  private handleError(error: any) {
+    return throwError(() => new BadRequestException(error.message || error));
+  }
+
+  private sendMessage(pattern: string, data: any) {
+    return this.client.send(pattern, data).pipe(catchError(this.handleError));
   }
 }

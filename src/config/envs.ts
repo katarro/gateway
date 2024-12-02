@@ -5,6 +5,9 @@ interface EnvVars {
   PORT: number;
   NATS_SERVERS: string;
   JWT_SECRET: string;
+  GOOGLE_CLIENT_ID: string;
+  GOOGLE_CLIENT_SECRET: string;
+  GOOGLE_REDIRECT_URIS: string;
 }
 
 const envsSchema = joi
@@ -12,6 +15,9 @@ const envsSchema = joi
     PORT: joi.number().required(),
     NATS_SERVERS: joi.string().required(),
     JWT_SECRET: joi.string().required(),
+    GOOGLE_CLIENT_ID: joi.string().required(),
+    GOOGLE_CLIENT_SECRET: joi.string().required(),
+    GOOGLE_REDIRECT_URIS: joi.string().required()
   })
   .unknown(true);
 
@@ -32,4 +38,7 @@ export const envs = {
   port: envVars.PORT,
   nats_servers: envVars.NATS_SERVERS,
   jwt_secret: envVars.JWT_SECRET,
+  client_id: envVars.GOOGLE_CLIENT_ID,
+  client_secret: envVars.GOOGLE_CLIENT_SECRET,
+  redirect_uris: envVars.GOOGLE_REDIRECT_URIS
 };
