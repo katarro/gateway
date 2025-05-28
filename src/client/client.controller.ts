@@ -67,16 +67,16 @@ export class ClientController {
     });
   }
 
-  // ✅ Solo obtener la cantidad de personas en una cola específica
-  @Get('colas/:queueId/personas')
+  // ✅❌❌ Solo obtener la cantidad de personas tiempo de espera en una cola específica
+  @Get('colas/:queueId/personas-&-tiempo')
   async getPeopleInQueue(@Param('queueId') queueId: string) {
     const usersInQueue = await this.redisService.getUsersInQueue(queueId);
+    const waitTime = await this.redisService.getWaitTime(queueId);
 
     return {
       queueId,
       currentUsersInQueue: usersInQueue.length,
-      usersIds: usersInQueue, // IDs de usuarios en la cola
-      timestamp: new Date().toISOString(),
+      waitTime: waitTime || 0,
     };
   }
 

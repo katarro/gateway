@@ -41,6 +41,14 @@ export class RedisService {
     return await this.redis.smembers(key);
   }
 
+  // LLAMAR LA API DE INTELIGENCIA ARTIFICIAL PARA OBTENER EL TIEMPO DE ESPERA
+  async getWaitTime(queueId: string): Promise<number> {
+    const key = `queue:${queueId}`;
+    const userCount = await this.redis.scard(key);
+    const waitTimePerUser = 5; // en minutos
+    return userCount * waitTimePerUser;
+  }
+
   // Obtener todos los queueIds activos en Redis
   async getAllActiveQueueIds(): Promise<string[]> {
     const keys = await this.redis.keys('queue:*');
