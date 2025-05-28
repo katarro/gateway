@@ -3,7 +3,7 @@ import {
   CanActivate,
   ExecutionContext,
   UnauthorizedException,
-  Inject
+  Inject,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { firstValueFrom } from 'rxjs';
@@ -16,7 +16,7 @@ import { Request } from 'express';
 export class RolesGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    @Inject('NATS_SERVICES') private readonly client: ClientProxy, // Inyecta tu cliente de NATS
+    @Inject('NATS_SERVICES') private readonly client: ClientProxy,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -26,36 +26,45 @@ export class RolesGuard implements CanActivate {
     ]);
 
     if (!requiredRoles) {
-      return true; // Si no hay roles requeridos, permitir acceso.
+      return true;
     }
 
     const request = context.switchToHttp().getRequest<Request>();
-    const token = this.extractTokenFromHeader(request);
+
+    const token =
+      this.extractTokenFromHeader(request) ||
+      this.extractTokenFromCookie(request); // 👈 agregamos cookie fallback
 
     if (!token) {
       throw new UnauthorizedException('Token no encontrado');
     }
 
     try {
-      // Verifica el token usando el servicio NATS
       const { user } = await firstValueFrom(
-        this.client.send('verify.token', token),
+        this.client.send('public.verify.token', token),
       );
 
-      console.log('Usuario obtenido:', user.role);
+      request['user'] = user; // 👈 opcional: útil para el controlador
 
-      // Validar si el rol del usuario coincide con los roles requeridos
-      return requiredRoles.some((role) => user.role === role);
+      const hasRole = requiredRoles.includes(user.role);
 
-      
+      if (!hasRole) {
+        throw new UnauthorizedException('No tienes permiso');
+      }
+
+      return true;
     } catch (error) {
-      console.error('Error al verificar el token:', error.message);
-      throw new UnauthorizedException('Token inválido o no autorizado');
+      console.error('❌ RolesGuard error:', error.message);
+      throw new UnauthorizedException('Error al verificar token');
     }
   }
 
   private extractTokenFromHeader(request: Request): string | undefined {
     const [type, token] = request.headers.authorization?.split(' ') ?? [];
     return type === 'Bearer' ? token : undefined;
+  }
+
+  private extractTokenFromCookie(request: Request): string | undefined {
+    return request.cookies?.access_token;
   }
 }

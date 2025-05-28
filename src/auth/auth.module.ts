@@ -1,27 +1,14 @@
 import { Module } from '@nestjs/common';
-import { AuthUserController } from './auth.user.controller';
-import { AuthBranchController } from './auth.branch.controller';
-import { ClientsModule, Transport } from '@nestjs/microservices';
-import { envs } from 'src/config/envs';
-import { NATS_SERVICES } from 'src/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuthGuard } from './guards/auth.guard';
-import { GoogleOauthGuard } from './guards/google-oauth.guard';
+import { AuthController } from './auth.controller';
 import { GoogleStrategy } from './strategies/google.strategy';
+import { GoogleOauthGuard } from './guards/google-oauth.guard';
+import { TransportModule } from 'src/transport/transport.module';
 
 @Module({
-  controllers: [AuthUserController, AuthBranchController],
+  controllers: [AuthController],
   providers: [JwtService, AuthGuard, GoogleOauthGuard, GoogleStrategy],
-  imports: [
-    ClientsModule.register([
-      {
-        name: NATS_SERVICES,
-        transport: Transport.NATS,
-        options: {
-          servers: [envs.nats_servers],
-        },
-      },
-    ]),
-  ],
+  imports: [TransportModule],
 })
 export class AuthModule {}

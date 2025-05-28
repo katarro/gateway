@@ -1,16 +1,14 @@
 import {
+  IsBoolean,
   IsEmail,
-  IsEnum,
-  IsNumber,
   IsOptional,
+  IsPhoneNumber,
   IsString,
-  IsStrongPassword,
   Length,
 } from 'class-validator';
-import { Role } from 'src/auth/enums';
 export class UpdateUserDto {
   @IsString()
-  @Length(3, 20)
+  @Length(3, 40)
   @IsOptional()
   name?: string;
 
@@ -18,18 +16,19 @@ export class UpdateUserDto {
   @IsOptional()
   email?: string;
 
-  @IsStrongPassword({
-    minSymbols: 0,
-    minLength: 8,
-  })
+  @IsPhoneNumber('ES')
   @IsOptional()
-  password?: string;
+  phone?: string;
 
-  @IsEnum(Role)
+  @IsString()
   @IsOptional()
-  role?: Role;
+  customer_type_id?: string;
 
-  @IsNumber()
+  @IsBoolean()
   @IsOptional()
-  branch_id?: number;
+  is_active?: boolean;
+
+  @IsString()
+  @IsOptional()
+  rut?: string;
 }

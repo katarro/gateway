@@ -1,11 +1,8 @@
-enum Rol {
-  Admin = 'ADMIN',
-  Cliente = 'CLIENTE',
-  Ejecutivo = 'EJECUTIVO',
-}
+import { Role } from '../enums';
+
 export interface CurrentUser {
-  id: number;
-  nombre: string;
-  correo: string;
-  rol: Rol;
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
 }

@@ -1,5 +1,7 @@
 export enum Role {
-  Admin = 'Admin',
-  Client = 'Client',
-  Executive = 'Executive',
+  ADMIN = 'ADMIN',
+  ADMIN_BUSINESS = 'ADMIN_BUSINESS',
+  ADMIN_BRANCH = 'ADMIN_BRANCH',
+  EXECUTIVE = 'EXECUTIVE',
+  CLIENT = 'CLIENT',
 }

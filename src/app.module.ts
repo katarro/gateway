@@ -1,28 +1,29 @@
 import { Module } from '@nestjs/common';
+import { SseModule } from './sse/sse.module';
 import { AuthModule } from './auth/auth.module';
-import { QueueRouterModule } from './queue-router/queue-router.module';
+import { AdminModule } from './admin/admin.module';
+import { ClientModule } from './client/client.module';
+import { ExecutiveModule } from './executive/executive.module';
+import { AnonymousModule } from './anonymous/anonymous.module';
 import { TransportModule } from './transport/transport.module';
-import { WebsocketModule } from './websockets/websocket.module';
-import { CacheInterceptor, CacheModule } from '@nestjs/cache-manager';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { AdminBranchModule } from './admin-branch/admin-branch.module';
+import { AdminBusinessModule } from './admin-business/admin-business.module';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
     AuthModule,
-    QueueRouterModule,
     TransportModule,
-    WebsocketModule,
-    CacheModule.register({
-      ttl: 7200000,
-      isGlobal: true,
-    }),
+    AdminModule,
+    AdminBusinessModule,
+    AdminBranchModule,
+    ExecutiveModule,
+    ClientModule,
+    AnonymousModule,
+    SseModule,
+    RedisModule,
   ],
   controllers: [],
-  providers: [
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: CacheInterceptor,
-    },
-  ],
+  providers: [],
 })
 export class AppModule {}

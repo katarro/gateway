@@ -1,0 +1,8 @@
+export enum TicketStatus {
+  WAITING = 'WAITING',
+  CALLED = 'CALLED',
+  ATTENDING = 'ATTENDING',
+  COMPLETED = 'COMPLETED',
+  ABSENT = 'ABSENT',
+  POSTPONED = 'POSTPONED',
+}

@@ -1,25 +1,13 @@
-import { Type } from 'class-transformer';
-import { IsBoolean, IsString, IsDate, IsOptional } from 'class-validator';
+import { PartialType } from '@nestjs/mapped-types';
+import { CreateBranchDto } from './create-branch.dto';
+import { IsBoolean, IsOptional, IsString } from 'class-validator';
 
-export class UpdateBranchDto {
+export class UpdateBranchDto extends PartialType(CreateBranchDto) {
   @IsString()
   @IsOptional()
-  name?: string;
+  adminId?: string;
 
-  @IsString()
   @IsOptional()
-  address?: string;
-
-  @IsDate()
-  @Type(() => Date)
-  @IsOptional()
-  schedule?: Date;
-
   @IsBoolean()
-  @IsOptional()
-  status?: boolean;
-
-  @IsBoolean()
-  @IsOptional()
-  available?: boolean;
+  isActive?: boolean;
 }
