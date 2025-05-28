@@ -41,40 +41,13 @@ export class ClientController {
     });
   }
 
+  // ✅✅✅✅
   @Delete('tickets/:id')
   async deleteTicket(@User() user: any, @Param('id') id: string) {
-    console.log(`🗑️ Usuario ${user.id} solicitando eliminar el ticket ${id}`);
-
-    try {
-      // 1. Eliminar ticket del microservicio
-      const data = await this.sendMessage('client.deleteTicket', {
-        userId: user.id,
-        ticketId: id,
-      });
-
-      // const { queueId } = data;
-      // console.log(`✅ Ticket ${id} eliminado del microservicio`);
-
-      // // 2. ❌ NO manipular Redis aquí - lo hace el cleanup automáticamente
-      // // 3. ❌ NO publicar eventos que causen reconexiones
-
-      // // 4. ✅ Solo notificar a otros usuarios (opcional)
-      // await this.redisService.publishToQueue(queueId, {
-      //   type: 'user_left_queue',
-      //   userId: user.id,
-      //   ticketId: id,
-      //   message: 'Un usuario ha abandonado la cola',
-      //   timestamp: new Date().toISOString(),
-      // });
-
-      console.log(
-        `✅ Ticket ${id} eliminado completamente por usuario ${user.id}`,
-      );
-      return data;
-    } catch (error) {
-      console.error(`❌ Error eliminando ticket ${id}:`, error);
-      throw error;
-    }
+    return this.sendMessage('client.deleteTicket', {
+      userId: user.id,
+      ticketId: id,
+    });
   }
 
   @Get('tickets/activos')
@@ -94,14 +67,22 @@ export class ClientController {
     });
   }
 
+  // ✅ Solo obtener la cantidad de personas en una cola específica
+  @Get('colas/:queueId/personas')
+  async getPeopleInQueue(@Param('queueId') queueId: string) {
+    const usersInQueue = await this.redisService.getUsersInQueue(queueId);
+
+    return {
+      queueId,
+      currentUsersInQueue: usersInQueue.length,
+      usersIds: usersInQueue, // IDs de usuarios en la cola
+      timestamp: new Date().toISOString(),
+    };
+  }
+
   @Get('tickets/historial')
   async getTicketHistory(@User() req: any) {
     return this.sendMessage('client.getTicketHistory', { userId: req.user.id });
-  }
-
-  @Post('tickets/:id/cancelar')
-  async cancelTicket(@User() req: any, @Param('id') id: string) {
-    return this.sendMessage('client.cancelTicket', { userId: req.user.id, id });
   }
 
   // Encuestas

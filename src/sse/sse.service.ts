@@ -1,204 +1,229 @@
 import {
-  Inject,
   Injectable,
+  Inject,
   OnModuleInit,
   OnModuleDestroy,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
-import { CurrentUser } from 'src/auth/interfaces/current-user.interface';
-import { REDIS_SUB_CLIENT, TICKET_CALLED_EVENT } from 'src/config';
-import { RedisService } from 'src/redis/redis.service';
 import { Redis } from 'ioredis';
-import { SubscribeToQueueCommand } from './command/subscribe-to-queue.command';
-import { ClientManager } from './managers/client.manager';
+import { REDIS_SUB_CLIENT } from 'src/config';
+import { CurrentUser } from 'src/auth/interfaces/current-user.interface';
+import {
+  IChannelManager,
+  IConnectionManager,
+  IRedisMessageHandler,
+  ICleanupService,
+  ILogger,
+  CHANNEL_MANAGER_TOKEN,
+  CONNECTION_MANAGER_TOKEN,
+  REDIS_MESSAGE_HANDLER_TOKEN,
+  CLEANUP_SERVICE_TOKEN,
+  LOGGER_TOKEN,
+  SSE_CLIENT_FACTORY_TOKEN,
+  ISseClientFactory,
+} from './interfaces';
+import { RedisService } from 'src/redis/redis.service';
 
 @Injectable()
 export class SseService implements OnModuleInit, OnModuleDestroy {
-  private readonly subscribedChannels = new Set<string>();
-  private readonly messageHandler: (channel: string, message: string) => void;
   private isInitialized = false;
+  private messageHandler: (channel: string, message: string) => void;
 
   constructor(
     @Inject(REDIS_SUB_CLIENT) private readonly redis: Redis,
+    @Inject(CHANNEL_MANAGER_TOKEN)
+    private readonly channelManager: IChannelManager,
+    @Inject(REDIS_MESSAGE_HANDLER_TOKEN)
+    private readonly redisMessageHandler: IRedisMessageHandler,
+    @Inject(LOGGER_TOKEN) private readonly logger: ILogger,
+    @Inject(SSE_CLIENT_FACTORY_TOKEN)
+    private readonly clientFactory: ISseClientFactory,
+    @Inject(CONNECTION_MANAGER_TOKEN)
+    private readonly connectionManager: IConnectionManager,
+    @Inject(CLEANUP_SERVICE_TOKEN)
+    private readonly cleanupService: ICleanupService,
     private readonly redisService: RedisService,
-    private readonly clientManager: ClientManager,
-    private readonly subscribeCommand: SubscribeToQueueCommand,
   ) {
-    // 🔧 Definir handler una sola vez para evitar memory leaks
-    this.messageHandler = this.handleRedisMessage.bind(this);
+    // Vincular el handler de mensajes
+    this.messageHandler = this.redisMessageHandler.handleMessage.bind(
+      this.redisMessageHandler,
+    );
   }
 
-  async onModuleInit() {
+  async onModuleInit(): Promise<void> {
     if (this.isInitialized) {
-      console.log('⚠️ SseService ya está inicializado');
+      this.logger.warn('SseService ya está inicializado');
       return;
     }
 
-    console.log('🚀 Inicializando SseService...');
+    this.logger.info('Inicializando SseService...');
 
-    // 1. ✅ Registrar listener UNA SOLA VEZ al inicio
+    // Registrar listener de Redis UNA VEZ
     this.redis.on('message', this.messageHandler);
-    console.log('📡 Listener de Redis registrado');
+    this.logger.info('Listener de Redis registrado');
 
     this.isInitialized = true;
-    console.log('✅ SseService inicializado correctamente');
+    this.logger.info('SseService inicializado correctamente');
   }
 
-  async onModuleDestroy() {
-    console.log('🛑 Cerrando SseService...');
+  async onModuleDestroy(): Promise<void> {
+    this.logger.info('Cerrando SseService...');
 
-    // Limpiar listeners
+    // Limpiar listener
     this.redis.off('message', this.messageHandler);
 
     // Desuscribirse de todos los canales
-    if (this.subscribedChannels.size > 0) {
-      const channels = Array.from(this.subscribedChannels);
-      await this.redis.unsubscribe(...channels);
-      this.subscribedChannels.clear();
-    }
+    await this.channelManager.unsubscribeFromAll();
 
     this.isInitialized = false;
+    this.logger.info('SseService cerrado');
   }
 
   /**
-   * 🔧 Asegurar suscripción a canal (sin duplicados)
-   */
-  private async ensureChannelSubscription(queueId: string): Promise<void> {
-    const channel = `queue:${queueId}`;
-
-    if (this.subscribedChannels.has(channel)) {
-      console.log(`⚡ Ya suscrito a canal: ${channel}`);
-      return;
-    }
-
-    try {
-      await this.redis.subscribe(channel);
-      this.subscribedChannels.add(channel);
-      console.log(`📡 Suscrito a nuevo canal: ${channel}`);
-    } catch (error) {
-      console.error(`❌ Error suscribiéndose a ${channel}:`, error);
-    }
-  }
-
-  /**
-   * 📨 Manejar mensajes de Redis - UNA SOLA VEZ
-   */
-  private handleRedisMessage(channel: string, message: string): void {
-    try {
-      const data = JSON.parse(message);
-      const queueId = channel.split(':')[1];
-
-      console.log(`📨 [ÚNICO] Mensaje Redis en ${channel}:`, data);
-      this.broadcastToQueue(queueId, data);
-    } catch (err) {
-      console.error('💥 Error procesando mensaje Redis:', err);
-    }
-  }
-
-  /**
-   * 👤 Suscribir usuario a cola SSE
+   * 🔗 Suscribir usuario a cola SSE
    */
   async subscribeToQueue(
     queueId: string,
     res: Response,
     req: Request,
     user: CurrentUser,
-    body: any,
+    ticketData: any,
   ): Promise<void> {
-    console.log(`🔗 Suscribiendo ${user.email} a cola ${queueId}`);
-
-    // 1. Asegurar suscripción a Redis para esta cola
-    await this.ensureChannelSubscription(queueId);
-
-    // 2. Configurar y ejecutar comando
-    await this.subscribeCommand
-      .configure(queueId, res, req, user, body)
-      .execute();
-  }
-
-  /**
-   * 📢 Broadcast de ticket llamado
-   */
-  public broadcastTicketCalled(queueId: string, ticketNumber: number): void {
-    const data = {
-      type: TICKET_CALLED_EVENT,
+    this.logger.info(`Suscribiendo usuario a cola`, {
+      email: user.email,
       queueId,
-      currentTicketNumber: ticketNumber,
-      timestamp: new Date().toISOString(),
-    };
+    });
 
-    this.broadcastToQueue(queueId, data);
-  }
+    try {
+      // 1. Asegurar suscripción a canal Redis
+      const channel = this.generateChannelName(queueId);
+      await this.channelManager.subscribeToChannel(channel);
 
-  /**
-   * 📡 Enviar mensaje a todos los clientes de una cola
-   */
-  private broadcastToQueue(queueId: string, data: any): void {
-    const queueClients = this.clientManager.getClients(queueId);
+      // 2. Crear cliente SSE con mensaje de bienvenida
+      const { client, welcomeMessage } =
+        this.clientFactory.createClientWithWelcome(user, res, {
+          queueId,
+          ticketNumber: ticketData.ticketNumber,
+          estimatedWaitTime: ticketData.estimatedWaitTime,
+          moduleCode: ticketData.moduleCode,
+        });
 
-    if (!queueClients || queueClients.size === 0) {
-      console.log(`📭 No hay clientes conectados a la cola ${queueId}`);
-      return;
-    }
+      // 3. ✅ AGREGAR CLIENTE AL CONNECTION MANAGER
+      this.connectionManager.addConnection(queueId, client);
 
-    console.log(
-      `📡 Enviando mensaje a ${queueClients.size} clientes en cola ${queueId}`,
-    );
-    console.log(`📨 Datos a enviar:`, data);
+      // 4. ✅ AGREGAR A REDIS
+      await this.redisService.addUserToQueue(queueId, user.id);
 
-    const message = `data: ${JSON.stringify(data)}\n\n`;
-    const deadClients = new Set<Response>();
-    let successfulSends = 0;
+      // 5. Configurar headers SSE
+      this.setupSseHeaders(res);
 
-    // Enviar mensaje a todos los clientes
-    for (const client of queueClients) {
-      try {
-        // 🔧 Verificación más robusta del estado de la conexión
-        if (
-          client.res.destroyed ||
-          client.res.writableEnded ||
-          !client.res.writable
-        ) {
-          console.log(`💀 Cliente ${client.user.email} ya está desconectado`);
-          deadClients.add(client.res);
-          continue;
-        }
+      // 6. Enviar mensaje de bienvenida
+      await this.sendWelcomeMessage(res, welcomeMessage);
 
-        client.res.write(message);
-        successfulSends++;
-        console.log(`✅ Mensaje enviado a ${client.user.email}`);
-      } catch (error) {
-        console.error(`💀 Error enviando SSE a ${client.user.email}:`, error);
-        deadClients.add(client.res);
-      }
-    }
+      // 7. Configurar cleanup automático
+      this.setupCleanupHandlers(req, res, queueId, user.id, client.id);
 
-    // Limpiar clientes desconectados
-    for (const deadClient of deadClients) {
-      this.clientManager.removeClient(queueId, deadClient);
-    }
-
-    const remainingClients = this.clientManager.getClientCount(queueId);
-    console.log(
-      `✅ Mensaje enviado exitosamente a ${successfulSends} clientes. Restantes: ${remainingClients}`,
-    );
-  }
-
-  /**
-   * 📊 Obtener estadísticas
-   */
-  public getStats(): any {
-    const allQueues = this.clientManager.getAllQueues();
-    const stats = {
-      totalQueues: allQueues.length,
-      subscribedChannels: this.subscribedChannels.size,
-      channelsList: Array.from(this.subscribedChannels),
-      queues: allQueues.map((queueId) => ({
+      // 🔍 DEBUG: Verificar estado
+      const totalClients = this.connectionManager.getConnectionCount(queueId);
+      this.logger.info(`Usuario suscrito exitosamente`, {
+        email: user.email,
         queueId,
-        clients: this.clientManager.getClientCount(queueId),
-      })),
+        clientId: client.id,
+        totalClientsInQueue: totalClients,
+      });
+    } catch (error) {
+      this.logger.error(`Error suscribiendo usuario`, error, {
+        email: user.email,
+        queueId,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * 📊 Obtener estadísticas del servicio
+   */
+  // getServiceStats(): any {
+  //   return {
+  //     initialized: this.isInitialized,
+  //     connections: this.connectionManager.getDetailedStats(),
+  //     channels: {
+  //       subscribed: this.channelManager.getSubscribedChannels(),
+  //       count: this.channelManager.getSubscriptionCount(),
+  //     },
+  //   };
+  // }
+
+  // 🔧 Métodos privados de utilidad
+  private setupSseHeaders(res: Response): void {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.setTimeout(0);
+  }
+
+  private async sendWelcomeMessage(
+    res: Response,
+    welcomeMessage: any,
+  ): Promise<void> {
+    const formattedMessage = `data: ${JSON.stringify(welcomeMessage)}\n\n`;
+    res.write(formattedMessage);
+  }
+
+  private setupCleanupHandlers(
+    req: Request,
+    res: Response,
+    queueId: string,
+    userId: string,
+    clientId: string,
+  ): void {
+    let cleanupExecuted = false;
+
+    const executeCleanup = async (reason: string) => {
+      if (cleanupExecuted) return;
+      cleanupExecuted = true;
+
+      this.logger.info(`Ejecutando cleanup`, {
+        userId,
+        queueId,
+        clientId,
+        reason,
+      });
+
+      try {
+        // ✅ Usar CleanupService centralizado
+        await this.cleanupService.cleanupUser(queueId, userId);
+
+        // También remover del ConnectionManager
+        this.connectionManager.removeConnection(queueId, clientId);
+
+        const remainingClients =
+          this.connectionManager.getConnectionCount(queueId);
+        this.logger.info(`Cleanup completado`, {
+          userId,
+          queueId,
+          clientId,
+          remainingClients,
+          reason,
+        });
+      } catch (error) {
+        this.logger.error(`Error en cleanup`, error, {
+          userId,
+          queueId,
+          reason,
+        });
+      }
     };
 
-    return stats;
+    // Configurar event listeners
+    req.on('close', () => executeCleanup('request close'));
+    req.on('error', () => executeCleanup('request error'));
+    res.on('error', () => executeCleanup('response error'));
+    res.on('finish', () => executeCleanup('response finish'));
+  }
+
+  private generateChannelName(queueId: string): string {
+    return `queue:${queueId}`;
   }
 }

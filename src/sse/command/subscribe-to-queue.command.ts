@@ -4,18 +4,24 @@ import { Injectable, Inject } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { CurrentUser } from 'src/auth/interfaces/current-user.interface';
 import { RedisService } from 'src/redis/redis.service';
-import { ClientManager } from '../managers/client.manager';
-import { REDIS_SUB_CLIENT } from 'src/config';
-import { Redis } from 'ioredis';
-import { ISubscribeToQueueCommand } from '../interfaces/command.interface';
-
-interface SseClient {
-  res: Response;
-  user: CurrentUser;
-}
+import {
+  ISubscribeToQueueCommand,
+  IConnectionManager,
+  ISseClientFactory,
+  ICleanupService,
+  ILogger,
+  SseClient,
+  CONNECTION_MANAGER_TOKEN,
+  SSE_CLIENT_FACTORY_TOKEN,
+  CLEANUP_SERVICE_TOKEN,
+  LOGGER_TOKEN,
+} from '../interfaces';
+import { MessageFactory } from '../factories/message.factory';
+import { WelcomeMessageDto } from '../dto';
 
 @Injectable()
 export class SubscribeToQueueCommand implements ISubscribeToQueueCommand {
+  // 🔧 Parámetros se inyectan en tiempo de ejecución
   private queueId: string;
   private res: Response;
   private req: Request;
@@ -23,11 +29,21 @@ export class SubscribeToQueueCommand implements ISubscribeToQueueCommand {
   private body: any;
 
   constructor(
-    private readonly clientManager: ClientManager,
-    @Inject(REDIS_SUB_CLIENT) private readonly redis: Redis,
+    // ✅ Usar interfaces en lugar de implementaciones concretas (DIP)
+    @Inject(CONNECTION_MANAGER_TOKEN)
+    private readonly connectionManager: IConnectionManager,
+    @Inject(SSE_CLIENT_FACTORY_TOKEN)
+    private readonly clientFactory: ISseClientFactory,
+    @Inject(CLEANUP_SERVICE_TOKEN)
+    private readonly cleanupService: ICleanupService,
+    @Inject(LOGGER_TOKEN) private readonly logger: ILogger,
     private readonly redisService: RedisService,
+    private readonly messageFactory: MessageFactory,
   ) {}
 
+  /**
+   * 🔧 Configurar parámetros antes de ejecutar
+   */
   configure(
     queueId: string,
     res: Response,
@@ -49,27 +65,59 @@ export class SubscribeToQueueCommand implements ISubscribeToQueueCommand {
     }
 
     try {
+      this.logger.info('Iniciando suscripción a cola', {
+        queueId: this.queueId,
+        userId: this.user.id,
+        email: this.user.email,
+      });
+
       // 1. Configurar headers SSE
       this.setupSseHeaders();
 
-      // 2. Crear y agregar cliente usando ClientManager
-      const client = this.createClient();
-      this.clientManager.addClient(this.queueId, client);
+      // 2. ✅ Crear cliente usando Factory con DTOs
+      const { client, welcomeMessage } = this.createClientWithWelcome();
 
-      // 3. Agregar usuario a Redis
+      this.logger.info('Cliente creado con Factory', {
+        clientId: client.id,
+        queueId: this.queueId,
+        userId: this.user.id,
+      });
+
+      // 3. ✅ Agregar cliente usando ConnectionManager
+      this.connectionManager.addConnection(this.queueId, client);
+
+      // 🔍 DEBUG: Verificar que se agregó correctamente
+      const clientCount = this.connectionManager.getConnectionCount(
+        this.queueId,
+      );
+      this.logger.info('Cliente agregado al ConnectionManager', {
+        queueId: this.queueId,
+        clientId: client.id,
+        totalClientsInQueue: clientCount,
+      });
+
+      // 4. Agregar usuario a Redis
       await this.addUserToRedis();
 
-      // 4. Enviar mensaje de bienvenida
-      this.sendWelcomeMessage();
+      // 5. ✅ Enviar mensaje de bienvenida usando Factory
+      this.sendWelcomeMessage(welcomeMessage);
 
-      // 5. Configurar limpieza al desconectar
-      this.setupCleanupHandler();
+      // 6. Configurar limpieza al desconectar
+      this.setupCleanupHandler(client);
 
-      console.log(
-        `✅ Cliente ${this.user.email} agregado a cola ${this.queueId}`,
-      );
+      this.logger.info('Cliente suscrito exitosamente', {
+        queueId: this.queueId,
+        userId: this.user.id,
+        email: this.user.email,
+        clientId: client.id,
+        totalClientsInQueue: clientCount,
+      });
     } catch (error) {
-      console.error('❌ Error en subscribeToQueue:', error);
+      this.logger.error('Error en subscribeToQueue', error, {
+        queueId: this.queueId,
+        userId: this.user.id,
+        email: this.user.email,
+      });
       throw error;
     }
   }
@@ -82,98 +130,162 @@ export class SubscribeToQueueCommand implements ISubscribeToQueueCommand {
     this.res.setTimeout(0);
   }
 
-  private createClient(): SseClient {
-    return { user: this.user, res: this.res };
+  /**
+   * ✅ Crear cliente usando Factory con validación de DTOs
+   */
+  private createClientWithWelcome(): {
+    client: SseClient;
+    welcomeMessage: WelcomeMessageDto;
+  } {
+    const ticketData = {
+      queueId: this.queueId,
+      ticketNumber: this.parseTicketNumber(this.body.ticketNumber),
+      estimatedWaitTime: this.parseEstimatedTime(this.body.estimatedWaitTime),
+      moduleCode: this.body.moduleCode || undefined,
+    };
+
+    // ✅ Usar SseClientFactory con validación automática
+    return this.clientFactory.createClientWithWelcome(
+      this.user,
+      this.res,
+      ticketData,
+    );
   }
 
   private async addUserToRedis(): Promise<void> {
     await this.redisService.addUserToQueue(this.queueId, this.user.id);
+
+    this.logger.debug('Usuario agregado a Redis', {
+      queueId: this.queueId,
+      userId: this.user.id,
+    });
   }
 
-  private sendWelcomeMessage(): void {
-    const welcomeMessage = {
-      type: 'welcome',
-      message: `Hola ${this.user.email}, te has unido exitosamente a la cola.`,
-      ticketNumber: this.body.ticketNumber,
-      estimatedWaitTime: this.body.estimatedWaitTime,
-      moduleCode: this.body.moduleCode,
-      timestamp: new Date().toISOString(),
-    };
+  /**
+   * ✅ Enviar mensaje usando Factory con formateo automático
+   */
+  private sendWelcomeMessage(welcomeMessage: WelcomeMessageDto): void {
+    try {
+      // ✅ Usar MessageFactory para formatear
+      const formattedMessage = this.messageFactory.formatForSSE(welcomeMessage);
+      this.res.write(formattedMessage);
 
-    this.res.write(`data: ${JSON.stringify(welcomeMessage)}\n\n`);
+      this.logger.debug('Mensaje de bienvenida enviado', {
+        queueId: this.queueId,
+        userId: this.user.id,
+        messageType: welcomeMessage.type,
+      });
+    } catch (error) {
+      this.logger.error('Error enviando mensaje de bienvenida', error, {
+        queueId: this.queueId,
+        userId: this.user.id,
+      });
+      throw error;
+    }
   }
 
-  private setupCleanupHandler(): void {
-    // 🔧 Variables para evitar múltiples ejecuciones
+  /**
+   * ✅ Usar CleanupService para manejar desconexiones
+   */
+  private setupCleanupHandler(client: SseClient): void {
     let cleanupExecuted = false;
 
     const executeCleanup = async (reason: string) => {
       if (cleanupExecuted) {
-        console.log(
-          `⚠️ Cleanup ya ejecutado para ${this.user.email} (${reason})`,
-        );
+        this.logger.debug('Cleanup ya ejecutado', {
+          userId: this.user.id,
+          email: this.user.email,
+          reason,
+        });
         return;
       }
 
       cleanupExecuted = true;
-      console.log(
-        `🧹 Ejecutando cleanup para ${this.user.email} - Razón: ${reason}`,
-      );
+
+      this.logger.info('Ejecutando cleanup', {
+        userId: this.user.id,
+        email: this.user.email,
+        queueId: this.queueId,
+        clientId: client.id,
+        reason,
+      });
 
       try {
-        // 1. Remover del ClientManager primero
-        const wasRemoved = this.clientManager.removeClient(
-          this.queueId,
-          this.res,
-        );
+        // ✅ Usar CleanupService centralizado
+        await this.cleanupService.cleanupUser(this.queueId, this.user.id);
 
-        if (!wasRemoved) {
-          console.log(
-            `⚠️ Cliente ${this.user.email} ya no estaba en ClientManager`,
-          );
-        }
+        // También remover del ConnectionManager usando clientId
+        this.connectionManager.removeConnection(this.queueId, client.id);
 
-        // 2. ✅ SIEMPRE remover de Redis cuando se desconecta
-        const removedFromRedis = await this.redisService.removeUserFromQueue(
-          this.queueId,
-          this.user.id,
-        );
-
-        if (removedFromRedis) {
-          console.log(
-            `✅ Usuario ${this.user.email} eliminado de Redis correctamente`,
-          );
-        } else {
-          console.log(`⚠️ Usuario ${this.user.email} ya no estaba en Redis`);
-        }
-
-        const remainingClients = this.clientManager.getClientCount(
+        const remainingClients = this.connectionManager.getConnectionCount(
           this.queueId,
         );
-        console.log(
-          `📊 Clientes restantes en cola ${this.queueId}: ${remainingClients}`,
-        );
+
+        this.logger.info('Cleanup completado', {
+          userId: this.user.id,
+          queueId: this.queueId,
+          remainingClients,
+          reason,
+        });
       } catch (error) {
-        console.error(`❌ Error en cleanup para ${this.user.email}:`, error);
+        this.logger.error('Error en cleanup', error, {
+          userId: this.user.id,
+          queueId: this.queueId,
+          reason,
+        });
       }
     };
 
-    // Manejar cierre de conexión
+    // Configurar event listeners
     this.req.on('close', () => executeCleanup('request close'));
-
-    // Manejar errores de conexión
     this.req.on('error', (error) => {
-      console.error(`❌ Error en request para ${this.user.email}:`, error);
+      this.logger.error('Error en request', error, {
+        userId: this.user.id,
+        email: this.user.email,
+      });
       executeCleanup('request error');
     });
 
-    // Manejar errores de respuesta
     this.res.on('error', (error) => {
-      console.error(`❌ Error en response para ${this.user.email}:`, error);
+      this.logger.error('Error en response', error, {
+        userId: this.user.id,
+        email: this.user.email,
+      });
       executeCleanup('response error');
     });
 
-    // 🔧 Manejar finish de respuesta
     this.res.on('finish', () => executeCleanup('response finish'));
+  }
+
+  // 🔧 Métodos de utilidad para validar y parsear datos
+
+  private parseTicketNumber(value: any): number | undefined {
+    if (value === null || value === undefined) return undefined;
+
+    const parsed = typeof value === 'string' ? parseInt(value, 10) : value;
+    return isNaN(parsed) || parsed <= 0 ? undefined : parsed;
+  }
+
+  private parseEstimatedTime(value: any): number | undefined {
+    if (value === null || value === undefined) return undefined;
+
+    const parsed = typeof value === 'string' ? parseInt(value, 10) : value;
+    return isNaN(parsed) || parsed < 0 ? undefined : parsed;
+  }
+
+  /**
+   * 🔍 Método para debugging - obtener estado actual del comando
+   */
+  public getCommandState(): any {
+    return {
+      queueId: this.queueId,
+      userId: this.user?.id,
+      userEmail: this.user?.email,
+      hasRequest: !!this.req,
+      hasResponse: !!this.res,
+      responseDestroyed: this.res?.destroyed,
+      responseWritable: this.res?.writable,
+      body: this.body,
+    };
   }
 }

@@ -31,7 +31,6 @@ export class ExecutiveController {
     @Inject(REDIS_PUB_CLIENT) private readonly redis: Redis,
     private readonly sseService: SseService,
   ) {}
-
   // ✅✅✅✅ Obtener ticket actual del módulo asignado
   @Get('tickets/actual')
   async getCurrentTicket(@User() user: any) {
