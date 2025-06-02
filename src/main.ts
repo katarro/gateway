@@ -10,8 +10,8 @@ async function bootstrap() {
 
   const isDevelopment = envs.environment === 'development';
   const corsOrigin = isDevelopment
-    ? 'http://localhost:5500'
-    : 'https://freeq.cl';
+    ? ['http://localhost:3001', 'http://192.168.1.89:3001']
+    : ['https://freeq.cl'];
 
   app.enableCors({
     origin: corsOrigin,

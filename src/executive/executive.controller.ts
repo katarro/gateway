@@ -48,6 +48,8 @@ export class ExecutiveController {
     const queueId = result?.queueId;
 
     if (ticketNumber && queueId) {
+      await this.redis.set(`queue:${queueId}:current`, ticketNumber.toString());
+
       await this.redis.publish(
         `queue:${queueId}`,
         JSON.stringify({

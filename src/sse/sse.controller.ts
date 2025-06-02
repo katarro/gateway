@@ -34,6 +34,10 @@ export class SseController {
   ) {
     const user = req['user'] as CurrentUser;
 
+    console.log('User:', user);
+    console.log('Queue ID:', queueId);
+    console.log('Ticket ID:', ticketId);
+    console.log('Ticket Number:', ticketNumber);
     if (!user?.id) {
       res.status(HttpStatus.UNAUTHORIZED).json({
         error: 'Usuario no autenticado',
@@ -49,6 +53,8 @@ export class SseController {
       user.id,
       queueId,
     );
+
+    console.log('ES VALIDO EL TICKET?: ', isValid);
 
     if (!isValid) {
       res

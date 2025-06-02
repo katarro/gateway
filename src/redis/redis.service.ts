@@ -107,4 +107,15 @@ export class RedisService {
 
     return emptyQueues;
   }
+  async get(key: string): Promise<string | null> {
+    return await this.redis.get(key);
+  }
+
+  async set(key: string, value: string): Promise<void> {
+    await this.redis.set(key, value);
+  }
+
+  async getQueueLength(key: string): Promise<number> {
+    return await this.redis.llen(key);
+  }
 }

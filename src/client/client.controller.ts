@@ -29,19 +29,27 @@ export class ClientController {
     private readonly redisService: RedisService,
   ) {}
 
+  // ✅✅✅✅ Empresas
+  @Get('empresas')
+  async getCompanies() {
+    return this.sendMessage('client.getCompanies', {});
+  }
+
   // ✅✅✅✅ Tickets
   @Post('tickets/crear')
   async createTicket(
     @Body() createTicketDto: CreateTicketDto,
     @User() user: any,
   ) {
+    console.log('Create Ticket DTO:', createTicketDto);
+    console.log('User ID:', user.id);
     return this.sendMessage('client.createTicket', {
       createTicketDto,
       userId: user.id,
     });
   }
 
-  // ✅✅✅✅
+  // ✅✅✅✅ Borrar un ticket
   @Delete('tickets/:id')
   async deleteTicket(@User() user: any, @Param('id') id: string) {
     return this.sendMessage('client.deleteTicket', {
@@ -50,12 +58,17 @@ export class ClientController {
     });
   }
 
-  @Get('tickets/activos')
-  async getActiveTickets(@User() req: any) {
-    return this.sendMessage('client.getActiveTickets', { userId: req.user.id });
+  // ✅✅✅✅ Obtener tickets activos
+  @Get('tickets-activos')
+  async getActiveTicketsByUser(@User() user: any) {
+    console.log('USERID: ', user.id);
+
+    return this.sendMessage('client.getActiveTicketsByUserId', {
+      userId: user.id,
+    });
   }
 
-  // ✅✅✅✅
+  // ✅✅✅✅ Obtener ticket activo por ID de cola
   @Get('tickets/activos/cola/:queueId')
   async getActiveTicketById(
     @User() user: any,
@@ -65,6 +78,27 @@ export class ClientController {
       userId: user.id,
       queueId,
     });
+  }
+
+  // ✅✅✅✅ Obtener sucursales por empresa
+  @Get('sucursales/:companyId')
+  async getBranchesByCompany(@Param('companyId') companyId: string) {
+    return this.sendMessage('client.getBranchesByCompany', { companyId });
+  }
+
+  // ✅✅✅✅ Cancelar un ticket
+  @Post('tickets/cancelar/:ticketId')
+  async cancelTicket(@User() user: any, @Param('ticketId') ticketId: string) {
+    return this.sendMessage('client.cancelTicket', {
+      userId: user.id,
+      ticketId,
+    });
+  }
+
+  // ❌❌ CORREGIR
+  @Get('servicios/:branchId')
+  async getServicesByBranch(@Param('branchId') branchId: string) {
+    return this.sendMessage('client.getServicesByBranch', { branchId });
   }
 
   // ✅❌❌ Solo obtener la cantidad de personas tiempo de espera en una cola específica
@@ -80,29 +114,31 @@ export class ClientController {
     };
   }
 
+  // ✅✅✅✅
   @Get('tickets/historial')
-  async getTicketHistory(@User() req: any) {
-    return this.sendMessage('client.getTicketHistory', { userId: req.user.id });
+  async getTicketHistory(@User() user: any) {
+    return this.sendMessage('client.getTicketHistory', { userId: user.id });
   }
 
   // Encuestas
   @Post('encuestas')
-  async createSurvey(@User() req: any, @Body() body: any) {
+  async createSurvey(@User() user: any, @Body() body: any) {
     return this.sendMessage('client.createSurvey', {
-      userId: req.user.id,
+      userId: user.id,
       ...body,
     });
   }
 
-  // Exploración
+  // ✅✅✅✅ Exploración
   @Get('sucursales')
   async getBranches() {
     return this.sendMessage('client.getBranches', {});
   }
 
-  @Get('sucursales/:id/filas')
-  async getQueuesByBranch(@Param('id') id: string) {
-    return this.sendMessage('client.getQueuesByBranch', { id });
+  // Obtener colas por sucursal
+  @Get('colas/:branchId')
+  async getQueuesByBranch(@Param('branchId') branchId: string) {
+    return this.sendMessage('client.getQueuesByBranch', { branchId });
   }
 
   private handleError(error: any) {
