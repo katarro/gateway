@@ -9,6 +9,8 @@ import { TransportModule } from './transport/transport.module';
 import { AdminBranchModule } from './admin-branch/admin-branch.module';
 import { AdminBusinessModule } from './admin-business/admin-business.module';
 import { RedisModule } from './redis/redis.module';
+import { QueueTimeController } from './queue-time/queue-time.controller';
+import { QueueTimeModule } from './queue-time/queue-time.module';
 
 @Module({
   imports: [
@@ -22,8 +24,9 @@ import { RedisModule } from './redis/redis.module';
     AnonymousModule,
     SseModule,
     RedisModule,
+    QueueTimeModule,
   ],
-  controllers: [],
+  controllers: [QueueTimeController],
   providers: [],
 })
 export class AppModule {}

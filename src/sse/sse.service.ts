@@ -1,3 +1,4 @@
+// sse.service.ts
 import {
   Injectable,
   Inject,
@@ -23,11 +24,13 @@ import {
   ISseClientFactory,
 } from './interfaces';
 import { RedisService } from 'src/redis/redis.service';
+import { envs } from 'src/config/envs';
 
 @Injectable()
 export class SseService implements OnModuleInit, OnModuleDestroy {
   private isInitialized = false;
-  private messageHandler: (channel: string, message: string) => void;
+  private readonly messageHandler: (channel: string, message: string) => void;
+  private readonly urlFrontend: string;
 
   constructor(
     @Inject(REDIS_SUB_CLIENT) private readonly redis: Redis,
@@ -48,6 +51,13 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
     this.messageHandler = this.redisMessageHandler.handleMessage.bind(
       this.redisMessageHandler,
     );
+    const frontendUrls = {
+      development: 'http://192.168.1.89:3001',
+      production: 'https://freeq.cl',
+      test: 'https://test.freeq.cl',
+    };
+
+    this.urlFrontend = frontendUrls[envs.environment];
   }
 
   async onModuleInit(): Promise<void> {
@@ -300,14 +310,13 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
 
-    // ✅ AGREGAR: Headers CORS específicos para SSE
-    res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3001');
+    res.setHeader('Access-Control-Allow-Origin', this.urlFrontend);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader(
       'Access-Control-Allow-Headers',
-      'Content-Type, Authorization, Cookie',
+      'Content-Type, Authorization, Cookie, Last-Event-ID',
     );
-    res.setHeader('Access-Control-Allow-Methods', 'GET');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
 
     res.setTimeout(0);
   }

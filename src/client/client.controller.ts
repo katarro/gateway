@@ -7,7 +7,7 @@ import {
   Param,
   BadRequestException,
   UseGuards,
-  Delete,
+  Logger,
 } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { throwError, firstValueFrom, catchError } from 'rxjs';
@@ -18,15 +18,18 @@ import { AuthGuard } from 'src/auth/guards/auth.guard';
 import { RolesGuard } from 'src/auth/guards/roles.guard';
 import { CreateTicketDto } from 'src/common';
 import { NATS_SERVICES } from 'src/config';
+import { EventNotificationService } from 'src/redis/event-notification.service';
 import { RedisService } from 'src/redis/redis.service';
 
 @Controller('cliente')
 @UseGuards(AuthGuard, RolesGuard)
 @Roles(Role.CLIENT)
 export class ClientController {
+  logger = new Logger('ClientController');
   constructor(
     @Inject(NATS_SERVICES) private readonly client: ClientProxy,
     private readonly redisService: RedisService,
+    private readonly eventNotificationService: EventNotificationService,
   ) {}
 
   // ✅✅✅✅ Empresas
@@ -46,15 +49,6 @@ export class ClientController {
     return this.sendMessage('client.createTicket', {
       createTicketDto,
       userId: user.id,
-    });
-  }
-
-  // ✅✅✅✅ Borrar un ticket
-  @Delete('tickets/:id')
-  async deleteTicket(@User() user: any, @Param('id') id: string) {
-    return this.sendMessage('client.deleteTicket', {
-      userId: user.id,
-      ticketId: id,
     });
   }
 
@@ -89,10 +83,18 @@ export class ClientController {
   // ✅✅✅✅ Cancelar un ticket
   @Post('tickets/cancelar/:ticketId')
   async cancelTicket(@User() user: any, @Param('ticketId') ticketId: string) {
-    return this.sendMessage('client.cancelTicket', {
+    const ticket = await this.sendMessage('client.cancelTicket', {
       userId: user.id,
       ticketId,
     });
+
+    this.logger.log('Ticket cancelled:', ticket);
+    console.log('Ticket cancelled:', ticket);
+    await this.eventNotificationService.publishEventUpdateCountInQueue(
+      ticket.queueId,
+    );
+
+    return ticket;
   }
 
   // ❌❌ CORREGIR
@@ -135,7 +137,7 @@ export class ClientController {
     return this.sendMessage('client.getBranches', {});
   }
 
-  // Obtener colas por sucursal
+  // ✅✅✅✅ Obtener colas por sucursal
   @Get('colas/:branchId')
   async getQueuesByBranch(@Param('branchId') branchId: string) {
     return this.sendMessage('client.getQueuesByBranch', { branchId });

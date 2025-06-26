@@ -35,6 +35,8 @@ import {
   SSE_CLIENT_FACTORY_TOKEN,
   SUBSCRIBE_TO_QUEUE_COMMAND,
 } from './interfaces';
+import { SseSubscriptionExecutiveService } from './services/sse-subscription-executive.service';
+import { EventNotificationService } from 'src/redis/event-notification.service';
 
 @Module({
   providers: [
@@ -42,6 +44,8 @@ import {
     SseService,
     TicketService,
     SubscribeToQueueCommand,
+    SseSubscriptionExecutiveService,
+    EventNotificationService,
 
     // Nuevos servicios con sus tokens
     {

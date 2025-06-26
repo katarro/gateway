@@ -17,14 +17,19 @@ export class AuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
-    // console.log('🍪 Todas las cookies recibidas:', request.cookies);
 
-    const token =
-      this.extractTokenFromHeader(request) ||
-      this.extractTokenFromCookie(request);
+    // 🔧 NUEVO: Buscar token desde múltiples fuentes
+    const token = this.extractTokenFromMultipleSources(request);
 
-    // console.log('Token extraído:', token);
+    console.log('🔍 Fuentes de token verificadas:', {
+      hasQueryToken: !!request.query?.token,
+      hasHeaderToken: !!this.extractTokenFromHeader(request),
+      hasCookieToken: !!this.extractTokenFromCookie(request),
+      finalToken: !!token,
+    });
+
     if (!token) {
+      console.log('❌ No se encontró token en ninguna fuente');
       throw new UnauthorizedException('Token no encontrado');
     }
 
@@ -36,11 +41,44 @@ export class AuthGuard implements CanActivate {
 
       request['user'] = user;
       request['token'] = newToken;
-    } catch {
-      throw new UnauthorizedException();
+
+      console.log('✅ Token validado correctamente:', {
+        userId: user?.id,
+        email: user?.email,
+      });
+    } catch (error) {
+      console.error('❌ Error validando token:', error);
+      throw new UnauthorizedException('Token inválido');
     }
 
     return true;
+  }
+
+  // 🔧 NUEVA FUNCIÓN: Buscar token desde múltiples fuentes
+  private extractTokenFromMultipleSources(
+    request: Request,
+  ): string | undefined {
+    // 1️⃣ PRIORIDAD 1: Query parameter 'token' (para SSE)
+    if (request.query?.token && typeof request.query.token === 'string') {
+      console.log('🎯 Token encontrado en query parameter');
+      return request.query.token;
+    }
+
+    // 2️⃣ PRIORIDAD 2: Authorization header (para peticiones normales)
+    const headerToken = this.extractTokenFromHeader(request);
+    if (headerToken) {
+      console.log('🎯 Token encontrado en Authorization header');
+      return headerToken;
+    }
+
+    // 3️⃣ PRIORIDAD 3: Cookie (fallback)
+    const cookieToken = this.extractTokenFromCookie(request);
+    if (cookieToken) {
+      console.log('🎯 Token encontrado en cookie');
+      return cookieToken;
+    }
+
+    return undefined;
   }
 
   private extractTokenFromHeader(request: Request): string | undefined {

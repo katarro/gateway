@@ -3,6 +3,7 @@ import { REDIS_PUB_CLIENT, REDIS_SUB_CLIENT } from 'src/config';
 import Redis from 'ioredis';
 import { envs } from 'src/config/envs';
 import { RedisService } from './redis.service';
+import { EventNotificationService } from './event-notification.service';
 
 @Global()
 @Module({
@@ -44,6 +45,7 @@ import { RedisService } from './redis.service';
       },
     },
     RedisService,
+    EventNotificationService,
   ],
   exports: [RedisService, REDIS_PUB_CLIENT, REDIS_SUB_CLIENT],
 })

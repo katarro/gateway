@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import * as joi from 'joi';
 
-type Environment = 'development' | 'production';
+type Environment = 'development' | 'production' | 'test';
 
 interface EnvVars {
   PORT: number;
@@ -27,7 +27,7 @@ const envsSchema = joi
     REDIS_PASSWORD: joi.string().required(),
     ENVIRONMENT: joi
       .string()
-      .valid('development', 'production')
+      .valid('development', 'production', 'test')
       .default('development')
       .required(),
   })

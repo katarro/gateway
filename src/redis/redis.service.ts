@@ -1,3 +1,7 @@
+// ============================================
+// ARCHIVO: src/redis/redis.service.ts
+// ============================================
+
 import { Inject, Injectable } from '@nestjs/common';
 import { REDIS_PUB_CLIENT } from 'src/config';
 import { Redis } from 'ioredis';
@@ -6,14 +10,14 @@ import { Redis } from 'ioredis';
 export class RedisService {
   constructor(@Inject(REDIS_PUB_CLIENT) private readonly redis: Redis) {}
 
-  // Agregar usuario a una cola
+  // ✅ Agregar usuario a una cola del servicio
   async addUserToQueue(queueId: string, userId: string) {
     const key = `queue:${queueId}`;
     await this.redis.sadd(key, userId);
     console.log(`➕ Usuario ${userId} agregado a ${key}`);
   }
 
-  // Eliminar usuario
+  // ✅ Eliminar usuario de cola
   async removeUserFromQueue(queueId: string, userId: string) {
     const key = `queue:${queueId}`;
     console.log(`➡️ Intentando eliminar ${userId} de ${key}`);
@@ -35,13 +39,21 @@ export class RedisService {
     return removed > 0;
   }
 
-  // Obtener usuarios de una cola
+  // ✅ Obtener usuarios de una cola
   async getUsersInQueue(queueId: string): Promise<string[]> {
     const key = `queue:${queueId}`;
     return await this.redis.smembers(key);
   }
 
-  // LLAMAR LA API DE INTELIGENCIA ARTIFICIAL PARA OBTENER EL TIEMPO DE ESPERA
+  // ✅ MÉTODO ESPECÍFICO: Contar usuarios en cola
+  async getUserCountInQueue(queueId: string): Promise<number> {
+    const key = `queue:${queueId}`;
+    const count = await this.redis.scard(key);
+    console.log(`📊 Usuarios en cola ${queueId}: ${count}`);
+    return count;
+  }
+
+  // ✅ Obtener tiempo de espera estimado
   async getWaitTime(queueId: string): Promise<number> {
     const key = `queue:${queueId}`;
     const userCount = await this.redis.scard(key);
@@ -49,49 +61,78 @@ export class RedisService {
     return userCount * waitTimePerUser;
   }
 
-  // Obtener todos los queueIds activos en Redis
-  async getAllActiveQueueIds(): Promise<string[]> {
-    const keys = await this.redis.keys('queue:*');
-    return keys
-      .filter((key) => !key.includes(':temp:')) // excluir claves temporales
-      .map((key) => key.split(':')[1]);
-  }
-
-  // 🔧 Verificar si una cola existe
+  // ✅ Verificar si una cola existe
   async queueExists(queueId: string): Promise<boolean> {
     const key = `queue:${queueId}`;
     const exists = await this.redis.exists(key);
     return exists === 1;
   }
 
-  // 🔧 Contar usuarios en cola
-  async getUserCountInQueue(queueId: string): Promise<number> {
-    const key = `queue:${queueId}`;
-    return await this.redis.scard(key);
-  }
+  // ✅ Guardar ticket completado en ZSET de Redis
+  async addCompletedTicket(queueId: string, ticketData: any): Promise<void> {
+    const today = this.getTodayDateKey();
+    const completedTicketsKey = `queue:${queueId}:completed:${today}`;
 
-  // 📢 Publicar evento de ticket eliminado (opcional)
-  async publishTicketDeleted(queueId: string, data: any): Promise<void> {
-    const channel = `queue:${queueId}`;
-    const message = JSON.stringify({
-      type: 'ticket_deleted',
-      ...data,
+    // ✅ Crear objeto con datos del ticket completado
+    const ticketRecord = {
+      ticketId: ticketData.id,
+      ticketNumber: ticketData.ticketNumber,
+      completedAt: new Date().toISOString(),
+      completedBy: ticketData.executiveId || ticketData.userId,
+      queueId: queueId,
+      serviceTime: ticketData.serviceTime || null,
+      satisfaction: ticketData.satisfaction || null,
+    };
+
+    // ✅ Guardar en ZSET con score = timestamp para ordenar
+    const timestamp = Date.now();
+    await this.redis.zadd(
+      completedTicketsKey,
+      timestamp,
+      JSON.stringify(ticketRecord),
+    );
+
+    // ✅ Expirar al final del día siguiente (48 horas para seguridad)
+    await this.redis.expire(completedTicketsKey, 172800);
+
+    console.log(`✅ Ticket completado guardado en Redis:`, {
+      key: completedTicketsKey,
+      ticketId: ticketData.id,
+      ticketNumber: ticketData.ticketNumber,
     });
-
-    await this.redis.publish(channel, message);
-    console.log(`📢 Evento ticket_deleted publicado en ${channel}`);
   }
 
-  // 📢 Publicar mensaje genérico a cola
-  async publishToQueue(queueId: string, data: any): Promise<void> {
-    const channel = `queue:${queueId}`;
-    const message = JSON.stringify(data);
+  // ✅ Obtener cantidad de tickets completados hoy desde ZSET
+  async getCompletedTicketsCountToday(queueId: string): Promise<number> {
+    const today = this.getTodayDateKey();
+    const completedTicketsKey = `queue:${queueId}:completed:${today}`;
 
-    await this.redis.publish(channel, message);
-    console.log(`📢 Mensaje publicado en ${channel}:`, data);
+    const count = await this.redis.zcard(completedTicketsKey);
+    console.log(`📊 Tickets completados hoy en cola ${queueId}: ${count}`);
+    return count;
   }
 
-  // 🔧 Limpiar colas huérfanas (sin usuarios)
+  // ✅ Obtener lista de tickets completados hoy
+  async getCompletedTicketsToday(queueId: string): Promise<any[]> {
+    const today = this.getTodayDateKey();
+    const completedTicketsKey = `queue:${queueId}:completed:${today}`;
+
+    // ✅ Obtener todos los tickets ordenados por timestamp (más recientes primero)
+    const tickets = await this.redis.zrevrange(completedTicketsKey, 0, -1);
+
+    return tickets
+      .map((ticketJson) => {
+        try {
+          return JSON.parse(ticketJson);
+        } catch (error) {
+          console.error('Error parseando ticket completado:', error);
+          return null;
+        }
+      })
+      .filter(Boolean);
+  }
+
+  // ✅ Limpiar colas huérfanas
   async cleanupEmptyQueues(): Promise<string[]> {
     const allKeys = await this.redis.keys('queue:*');
     const emptyQueues: string[] = [];
@@ -107,6 +148,8 @@ export class RedisService {
 
     return emptyQueues;
   }
+
+  // ✅ Métodos básicos de Redis
   async get(key: string): Promise<string | null> {
     return await this.redis.get(key);
   }
@@ -115,7 +158,12 @@ export class RedisService {
     await this.redis.set(key, value);
   }
 
-  async getQueueLength(key: string): Promise<number> {
-    return await this.redis.llen(key);
+  // ✅ Métodos privados de utilidad
+  private getTodayDateKey(): string {
+    return this.formatDateKey(new Date());
+  }
+
+  private formatDateKey(date: Date): string {
+    return date.toISOString().split('T')[0]; // YYYY-MM-DD
   }
 }
