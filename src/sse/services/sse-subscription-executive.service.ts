@@ -25,6 +25,7 @@ import {
 import { RedisService } from 'src/redis/redis.service';
 import { Redis } from 'ioredis';
 import { MessageEvent } from 'src/common/interfaces';
+import { CHANNEL_MANAGER_TOKEN, IChannelManager } from '../interfaces';
 
 @Injectable()
 export class SseSubscriptionExecutiveService
@@ -36,6 +37,8 @@ export class SseSubscriptionExecutiveService
   constructor(
     @Inject(REDIS_SUB_CLIENT) private readonly redisSubscriber: Redis,
     private readonly redisService: RedisService,
+    @Inject(CHANNEL_MANAGER_TOKEN)
+    private readonly channelManager: IChannelManager,
   ) {}
 
   // ✅ Configurar listener global al inicializar
@@ -125,34 +128,38 @@ export class SseSubscriptionExecutiveService
   }
 
   // ✅ MÉTODO SEPARADO: Solo para tickets completados
-  createCompletedTicketsStream(queueId: string): Observable<MessageEvent> {
-    const channel = `queue:${queueId}:executives`;
+  createCompletedTicketsStream(channel: string): Observable<MessageEvent> {
+    console.log(`🎫 Creando stream para canal: ${channel}`);
 
-    console.log(
-      `🎫 Creando stream para tickets completados en cola: ${queueId}`,
-    );
-
+    // ✅ Si no existe el subject, suscribirse automáticamente
     if (!this.redisSubjects.has(channel)) {
-      this.subscribeToRedisChannel(channel);
+      this.subscribeToRedisChannel(channel); // ← Esto crea el subject Y se suscribe
     }
 
     const subject = this.redisSubjects.get(channel);
 
+    if (!subject) {
+      throw new Error(`No se pudo crear subject para canal: ${channel}`);
+    }
+
     return subject.pipe(
-      // ✅ Solo procesar eventos de tickets completados
       filter((redisData) => redisData.type === TICKET_COMPLETED_EVENT),
       map((redisData) => {
-        console.log(`✅ Procesando ticket completado para cola ${queueId}:`, {
+        console.log(`✅ Procesando ticket completado:`, {
           ticketId: redisData.ticket?.id,
           completedToday: redisData.completedToday,
         });
 
+        // Es lo que le retorna al cliente
         return {
           data: JSON.stringify({
             type: TICKET_COMPLETED_EVENT,
-            queueId,
+            queueId: redisData.queueId,
+            executiveId: redisData.executiveId, // ← Usar estas propiedades
+            ticketId: redisData.ticketId, // ← que sí existen
+            myCompletedToday: redisData.myCompletedToday, // ← en el payload
             ticket: redisData.ticket,
-            completedToday: redisData.completedToday, // ✅ Incluir conteo desde Redis
+            completedToday: redisData.completedToday,
             timestamp: redisData.timestamp || new Date().toISOString(),
           }),
         } as MessageEvent;
@@ -162,8 +169,53 @@ export class SseSubscriptionExecutiveService
         return of({
           data: JSON.stringify({
             type: 'ERROR',
-            queueId,
             message: 'Error al recibir tickets completados',
+            timestamp: new Date().toISOString(),
+          }),
+        } as MessageEvent);
+      }),
+    );
+  }
+
+  // En SseSubscriptionService, agregar:
+  createUserEventsStream(userId: string): Observable<MessageEvent> {
+    console.log(`👤 Creando stream para eventos de usuario: ${userId}`);
+
+    const channel = `user:${userId}:events`;
+
+    console.log(`👂 SSE escuchando canal: ${channel} para usuario: ${userId}`);
+
+    // Reutilizar la misma lógica que ya tienes
+    if (!this.redisSubjects.has(channel)) {
+      this.subscribeToRedisChannel(channel);
+    }
+
+    const subject = this.redisSubjects.get(channel);
+    if (!subject) {
+      throw new Error(`No se pudo crear subject para canal: ${channel}`);
+    }
+
+    return subject.pipe(
+      filter((redisData) =>
+        ['TICKET_COMPLETED', 'QUEUE_STATUS_UPDATE', 'KEEPALIVE_USER'].includes(
+          redisData.type,
+        ),
+      ),
+      map(
+        (redisData) =>
+          ({
+            data: JSON.stringify({
+              ...redisData,
+              timestamp: redisData.timestamp || new Date().toISOString(),
+            }),
+          }) as MessageEvent,
+      ),
+      catchError((error) => {
+        console.error('❌ Error en stream de eventos de usuario:', error);
+        return of({
+          data: JSON.stringify({
+            type: 'ERROR',
+            message: 'Error al recibir eventos de usuario',
             timestamp: new Date().toISOString(),
           }),
         } as MessageEvent);

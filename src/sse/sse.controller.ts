@@ -1,5 +1,5 @@
 // ============================================
-// ARCHIVO: src/sse/sse.controller.ts
+// ARCHIVO: src/sse/sse.controller.ts - ACTUALIZADO
 // ============================================
 
 import {
@@ -25,13 +25,15 @@ import { ClientProxy } from '@nestjs/microservices';
 import { MessageEvent } from 'src/common/interfaces';
 import { SseSubscriptionExecutiveService } from './services/sse-subscription-executive.service';
 import { EventNotificationService } from 'src/redis/event-notification.service';
+import { ChannelService } from './services/channel.service';
+import { NATS_SERVICES } from 'src/config';
 
 @Controller('eventos-cola')
 export class SseController {
   constructor(
     private readonly sseService: SseService,
     private readonly ticketService: TicketService,
-    @Inject('NATS_SERVICES') private readonly client: ClientProxy,
+    @Inject(NATS_SERVICES) private readonly client: ClientProxy,
     private readonly sseSubscriptionService: SseSubscriptionExecutiveService,
     private readonly eventNotificationService: EventNotificationService,
   ) {}
@@ -49,17 +51,33 @@ export class SseController {
   }
 
   // ✅ ENDPOINT SEPARADO: Solo para tickets completados
-  @Sse('ejecutivo/tickets-completados/:queueId')
+  @Sse('ejecutivo/tickets-completados/:queueId/:executiveId')
   completedTickets(
     @Param('queueId') queueId: string,
+    @Param('executiveId') executiveId: string,
   ): Observable<MessageEvent> {
     console.log('🎫 Stream SSE para tickets completados:', queueId);
 
-    if (!queueId) {
-      throw new BadRequestException('El ID de la cola es requerido');
+    if (!queueId || !executiveId) {
+      throw new BadRequestException(
+        'El ID de la cola y ejecutivo son requeridos',
+      );
     }
 
-    return this.sseSubscriptionService.createCompletedTicketsStream(queueId);
+    const channel = ChannelService.generateCompletedTicketsChannel(
+      queueId,
+      executiveId,
+    );
+
+    return this.sseSubscriptionService.createCompletedTicketsStream(channel);
+  }
+
+  // 🆕 NUEVO ENDPOINT: Para eventos específicos del usuario
+  @Sse('usuario/:userId')
+  subscribeToUserEvents(
+    @Param('userId') userId: string,
+  ): Observable<MessageEvent> {
+    return this.sseSubscriptionService.createUserEventsStream(userId);
   }
 
   // ✅ ENDPOINT para suscripción de clientes (sin cambios)

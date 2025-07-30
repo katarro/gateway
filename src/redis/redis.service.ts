@@ -68,40 +68,6 @@ export class RedisService {
     return exists === 1;
   }
 
-  // ✅ Guardar ticket completado en ZSET de Redis
-  async addCompletedTicket(queueId: string, ticketData: any): Promise<void> {
-    const today = this.getTodayDateKey();
-    const completedTicketsKey = `queue:${queueId}:completed:${today}`;
-
-    // ✅ Crear objeto con datos del ticket completado
-    const ticketRecord = {
-      ticketId: ticketData.id,
-      ticketNumber: ticketData.ticketNumber,
-      completedAt: new Date().toISOString(),
-      completedBy: ticketData.executiveId || ticketData.userId,
-      queueId: queueId,
-      serviceTime: ticketData.serviceTime || null,
-      satisfaction: ticketData.satisfaction || null,
-    };
-
-    // ✅ Guardar en ZSET con score = timestamp para ordenar
-    const timestamp = Date.now();
-    await this.redis.zadd(
-      completedTicketsKey,
-      timestamp,
-      JSON.stringify(ticketRecord),
-    );
-
-    // ✅ Expirar al final del día siguiente (48 horas para seguridad)
-    await this.redis.expire(completedTicketsKey, 172800);
-
-    console.log(`✅ Ticket completado guardado en Redis:`, {
-      key: completedTicketsKey,
-      ticketId: ticketData.id,
-      ticketNumber: ticketData.ticketNumber,
-    });
-  }
-
   // ✅ Obtener cantidad de tickets completados hoy desde ZSET
   async getCompletedTicketsCountToday(queueId: string): Promise<number> {
     const today = this.getTodayDateKey();

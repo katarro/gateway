@@ -4,6 +4,8 @@ import Redis from 'ioredis';
 import { envs } from 'src/config/envs';
 import { RedisService } from './redis.service';
 import { EventNotificationService } from './event-notification.service';
+import { LOGGER_TOKEN } from 'src/sse/interfaces';
+import { LoggerService } from 'src/sse/services/logger.service';
 
 @Global()
 @Module({
@@ -44,8 +46,13 @@ import { EventNotificationService } from './event-notification.service';
         }
       },
     },
+    {
+      provide: LOGGER_TOKEN,
+      useClass: LoggerService,
+    },
     RedisService,
     EventNotificationService,
+    LoggerService,
   ],
   exports: [RedisService, REDIS_PUB_CLIENT, REDIS_SUB_CLIENT],
 })

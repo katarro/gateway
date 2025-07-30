@@ -8,7 +8,6 @@ import {
   QUEUE_UPDATE_EVENT,
   REDIS_PUB_CLIENT,
   TICKET_CALLED_EVENT,
-  TICKET_COMPLETED_EVENT,
 } from 'src/config';
 import { RedisService } from './redis.service';
 
@@ -58,48 +57,26 @@ export class EventNotificationService {
     );
   }
 
-  // ✅ Publicar evento de ticket completado
-  async publishEventCompleteTicket(ticket: any) {
-    const queueId = ticket?.data?.queueId;
-
-    if (!queueId) {
-      console.error('❌ No se puede publicar ticket completado sin queueId');
-      return;
-    }
-
+  // Funcion para publicar un evento
+  async publishEvent<T>(
+    channel: string,
+    eventType: string,
+    payload: T,
+  ): Promise<void> {
     try {
-      // ✅ 1. GUARDAR ticket completado en Redis
-      await this.redisService.addCompletedTicket(queueId, ticket.data);
+      const message = {
+        type: eventType,
+        ...payload,
+      };
 
-      // ✅ 2. OBTENER cantidad actualizada desde Redis
-      const completedCount =
-        await this.redisService.getCompletedTicketsCountToday(queueId);
-
-      // ✅ 3. PUBLICAR evento con cantidad real desde Redis
-      await this.redis.publish(
-        `queue:${queueId}:executives`,
-        JSON.stringify({
-          type: TICKET_COMPLETED_EVENT,
-          queueId,
-          ticket: ticket.data,
-          completedToday: completedCount, // ✅ Conteo real desde Redis
-          timestamp: new Date(),
-        }),
-      );
-
-      console.log(
-        `🎉 Evento ticket completado publicado para cola ${queueId}`,
-        {
-          ticketId: ticket.data?.id,
-          ticketNumber: ticket.data?.ticketNumber,
-          completedToday: completedCount,
-        },
-      );
-
-      // ✅ 4. También actualizar conteo de usuarios en cola
-      await this.publishEventUpdateCountInQueue(queueId);
+      await this.redis.publish(channel, JSON.stringify(message));
+      console.log(`✅ EVENTO PUBLICADO EN REDIS:`, { channel, message });
     } catch (error) {
-      console.error('❌ Error publicando evento de ticket completado:', error);
+      console.error(
+        `Error publicando evento ${eventType} en canal ${channel}`,
+        error,
+      );
+      throw error;
     }
   }
 
@@ -118,4 +95,94 @@ export class EventNotificationService {
       timestamp: new Date().toISOString(),
     };
   }
+
+  /**
+   * 🎯 MÉTODO CENTRALIZADO: Desuscribir cliente de cola y notificar finalización
+   * Reutilizable para COMPLETED, ABSENT, CANCELLED, etc.
+   */
+  async unsubscribeClientFromQueueAndNotify(
+    queueId: string,
+    ticketId: string,
+    clientUserId: string,
+    status: 'COMPLETED' | 'ABSENT' | 'CANCELLED',
+    executiveId?: string,
+  ): Promise<void> {
+    try {
+      console.log(
+        `🔌 Desuscribiendo cliente ${clientUserId} de cola ${queueId} - Status: ${status}`,
+      );
+
+      // 1. 🗑️ REMOVER USUARIO DE LA COLA DE REDIS
+      const wasRemoved = await this.redisService.removeUserFromQueue(
+        queueId,
+        clientUserId,
+      );
+      console.log(
+        `🗑️ Cliente ${clientUserId} desuscrito de cola: ${wasRemoved}`,
+      );
+
+      // 2. 📤 EVENTO PARA EL CLIENTE ESPECÍFICO
+      const clientChannel = `user:${clientUserId}:events`;
+      await this.publishEvent(clientChannel, 'TICKET_COMPLETED', {
+        ticketId,
+        queueId,
+        status,
+        completedAt: new Date().toISOString(),
+        executiveId,
+      });
+
+      // 3. 📊 EVENTO GENERAL PARA LA COLA
+      const queueChannel = `queue:${queueId}`;
+      await this.publishEvent(queueChannel, 'QUEUE_STATUS_UPDATE', {
+        queueId,
+        ticketCompleted: ticketId,
+        status,
+        currentTicketNumber: await this.redis.get(`queue:${queueId}:current`),
+        timestamp: new Date().toISOString(),
+      });
+
+      // 4. 🔄 ACTUALIZAR CONTEO DE COLA (automáticamente correcto)
+      await this.publishEventUpdateCountInQueue(queueId);
+
+      console.log(
+        `✅ Cliente ${clientUserId} desuscrito y notificado - Ticket ${ticketId} ${status}`,
+      );
+    } catch (error) {
+      console.error(`❌ Error desuscribiendo cliente de cola:`, error);
+      throw error;
+    }
+  }
 }
+/*
+
+
+const queueId = 'bd51dc67-9ea2-406e-98e9-b89d29431fe4';        
+const executiveId = '535c073a-f74e-4156-a700-bf686544ff01';    
+
+const eventSource = new EventSource(`http://192.168.1.89:3000/api/eventos-cola/ejecutivo/tickets-completados/${queueId}/${executiveId}`);
+// ✅ Escuchar eventos de tickets completados
+eventSource.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    console.log('🎫 Ticket completado recibido:', data);
+    
+    if (data.type === 'TICKET_COMPLETED_EVENT') {
+        console.log(`✅ Ejecutivo ${data.executiveId} completó ticket ${data.ticketId}`);
+        console.log(`📊 Total completados hoy: ${data.myCompletedToday}`);
+    }
+};
+
+eventSource.onopen = function(event) {
+    console.log('🚀 Conexión SSE abierta');
+};
+
+eventSource.onerror = function(event) {
+    console.error('❌ Error SSE:', event);
+    console.log('Estado:', eventSource.readyState);
+};
+
+// También agrega listener genérico:
+eventSource.addEventListener('TICKET_COMPLETED_EVENT', function(event) {
+    console.log('📨 Evento específico recibido:', event.data);
+});
+
+*/

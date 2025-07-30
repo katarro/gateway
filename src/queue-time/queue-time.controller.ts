@@ -1,9 +1,10 @@
 import {
-  Get,
   Param,
   Inject,
   Controller,
   BadRequestException,
+  Post,
+  Body,
 } from '@nestjs/common';
 import { NATS_SERVICES } from 'src/config';
 import { ClientProxy } from '@nestjs/microservices';
@@ -13,9 +14,25 @@ import { catchError, firstValueFrom, throwError } from 'rxjs';
 export class QueueTimeController {
   constructor(@Inject(NATS_SERVICES) private readonly client: ClientProxy) {}
 
-  @Get('obtener-tiempo-en-cola/:queueId')
-  async getTimeInQueue(@Param('queueId') queueId: string) {
-    return this.sendMessage('client.getTimeInQueue', { queueId });
+  @Post('obtener-tiempo-en-cola/:queueId')
+  async getTimeInQueue(
+    @Param('queueId') queueId: string,
+    @Body('date') date: string,
+  ) {
+    return this.sendMessage('client.getTimeInQueue', { queueId, date });
+  }
+
+  @Post('tiempo-restante-ticket/:queueId/:ticketId')
+  async getRemainingTimeForTicket(
+    @Param('queueId') queueId: string,
+    @Param('ticketId') ticketId: string,
+    @Body('date') date: string,
+  ) {
+    return this.sendMessage('client.getRemainingTimeForTicket', {
+      queueId,
+      ticketId,
+      date,
+    });
   }
 
   private handleError(error: any) {

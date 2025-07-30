@@ -52,7 +52,7 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
       this.redisMessageHandler,
     );
     const frontendUrls = {
-      development: 'http://192.168.1.89:3001',
+      development: 'http://localhost:3001',
       production: 'https://freeq.cl',
       test: 'https://test.freeq.cl',
     };
@@ -384,4 +384,313 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
   private generateChannelName(queueId: string): string {
     return `queue:${queueId}`;
   }
+
+  /******************************************************/
+  /******************************************************/
+
+  /**
+   * 🆕 Suscribir usuario a eventos personales
+   * Frontend se conecta a: /eventos-cola/usuario/${userId}?token=${token}
+   * @param userId - ID del usuario
+   * @param token - Token de autenticación
+   * @param res - Response object de Express para SSE
+   * @param req - Request object de Express
+   */
+  async subscribeToUserEvents(
+    userId: string,
+    user: CurrentUser,
+    res: Response,
+    req: Request,
+  ): Promise<void> {
+    this.logger.info('Iniciando suscripción de eventos para usuario', {
+      userId,
+    });
+
+    try {
+      this.logger.info('User_id', { userId });
+
+      // 1. Generar canal del usuario
+      const userChannel = this.generateUserChannelName(userId);
+
+      // 2. Suscribirse al canal del usuario usando el ChannelManager
+      await this.channelManager.subscribeToChannel(userChannel);
+      this.logger.info('Suscrito al canal del usuario', {
+        userId,
+        userChannel,
+      });
+
+      // 3. Crear cliente SSE usando datos mínimos
+      const userClient = this.clientFactory.createClient(user, res);
+
+      // 4. Agregar cliente al ConnectionManager
+      const userEventQueueId = `user_events_${userId}`;
+      this.connectionManager.addConnection(userEventQueueId, userClient);
+
+      // 5. Configurar headers SSE
+      this.setupSseHeaders(res);
+
+      // 6. Enviar mensaje de bienvenida
+      const welcomeMessage = {
+        type: 'USER_EVENTS_CONNECTED',
+        userId,
+        message: 'Conectado a eventos personales',
+        timestamp: new Date().toISOString(),
+      };
+      await this.sendWelcomeMessage(res, welcomeMessage);
+
+      // 7. Configurar handler de mensajes específico
+      const userMessageHandler = this.createUserMessageHandler(
+        userId,
+        userChannel,
+        res,
+      );
+
+      // 8. Registrar el handler en Redis
+      this.redis.on('message', userMessageHandler);
+
+      // 9. Configurar keepalive
+      const keepAliveManager = this.createUserKeepAliveManager(
+        userId,
+        res,
+        userClient.id,
+      );
+
+      // 10. Configurar cleanup automático
+      this.setupUserEventCleanupHandlers(
+        req,
+        res,
+        userId,
+        userClient.id,
+        userEventQueueId,
+        userChannel,
+        keepAliveManager,
+        userMessageHandler,
+      );
+
+      this.logger.info('Usuario suscrito exitosamente a eventos personales', {
+        userId,
+        clientId: userClient.id,
+        userChannel,
+      });
+    } catch (error) {
+      this.logger.error(
+        'Error suscribiendo usuario a eventos personales',
+        error,
+        { userId },
+      );
+
+      // Enviar error al cliente
+      try {
+        const errorMessage = {
+          type: 'CONNECTION_ERROR',
+          userId,
+          error:
+            error.message ||
+            'No se pudo establecer conexión a eventos personales',
+          timestamp: new Date().toISOString(),
+        };
+        res.write(`data: ${JSON.stringify(errorMessage)}\n\n`);
+      } catch (writeError) {
+        this.logger.error(
+          'Error enviando mensaje de error al cliente',
+          writeError,
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * Crear handler de mensajes específico para un usuario
+   */
+  private createUserMessageHandler(
+    userId: string,
+    userChannel: string,
+    res: Response,
+  ): (channel: string, message: string) => void {
+    return (channel: string, message: string) => {
+      try {
+        if (channel === userChannel) {
+          const data = JSON.parse(message);
+
+          this.logger.info('Evento recibido para usuario', {
+            userId,
+            eventType: data.type,
+            channel,
+          });
+
+          // Validar estructura del mensaje
+          if (!this.isValidUserEvent(data)) {
+            this.logger.warn('Evento de usuario inválido recibido', {
+              userId,
+              data,
+            });
+            return;
+          }
+
+          // Reenviar el evento al cliente
+          const formattedMessage = `data: ${JSON.stringify(data)}\n\n`;
+          res.write(formattedMessage);
+
+          this.logger.info('Evento reenviado al usuario', {
+            userId,
+            eventType: data.type,
+          });
+        }
+      } catch (error) {
+        this.logger.error('Error procesando evento de usuario', error, {
+          userId,
+          channel,
+        });
+      }
+    };
+  }
+
+  /**
+   * Crear manager de keepalive para eventos de usuario
+   */
+  private createUserKeepAliveManager(
+    userId: string,
+    res: Response,
+    clientId: string,
+  ): NodeJS.Timeout {
+    const keepAliveInterval = setInterval(() => {
+      const keepAlive = {
+        type: 'KEEPALIVE_USER',
+        userId,
+        clientId,
+        timestamp: new Date().toISOString(),
+      };
+
+      try {
+        res.write(`data: ${JSON.stringify(keepAlive)}\n\n`);
+        this.logger.debug('Keepalive enviado a usuario', { userId, clientId });
+      } catch (error) {
+        this.logger.warn('Error enviando keepalive, usuario desconectado', {
+          userId,
+          clientId,
+          error: error.message,
+        });
+        clearInterval(keepAliveInterval);
+      }
+    }, 30000); // 30 segundos
+
+    return keepAliveInterval;
+  }
+
+  /**
+   * Configurar handlers de cleanup para eventos de usuario
+   */
+  private setupUserEventCleanupHandlers(
+    req: Request,
+    res: Response,
+    userId: string,
+    clientId: string,
+    userEventQueueId: string,
+    userChannel: string,
+    keepAliveManager: NodeJS.Timeout,
+    messageHandler: (channel: string, message: string) => void,
+  ): void {
+    let cleanupExecuted = false;
+
+    const executeUserEventCleanup = async (reason: string) => {
+      if (cleanupExecuted) return;
+      cleanupExecuted = true;
+
+      this.logger.info('Ejecutando cleanup de eventos de usuario', {
+        userId,
+        clientId,
+        reason,
+      });
+
+      try {
+        // Limpiar interval de keepalive
+        clearInterval(keepAliveManager);
+
+        // Remover handler de mensajes específico directamente de Redis
+        this.redis.off('message', messageHandler);
+
+        // Desuscribirse del canal del usuario
+        await this.channelManager.unsubscribeFromChannel(userChannel);
+
+        // Remover conexión del ConnectionManager
+        this.connectionManager.removeConnection(userEventQueueId, clientId);
+
+        this.logger.info('Cleanup de eventos de usuario completado', {
+          userId,
+          clientId,
+          reason,
+        });
+      } catch (error) {
+        this.logger.error('Error en cleanup de eventos de usuario', error, {
+          userId,
+          clientId,
+          reason,
+        });
+      }
+    };
+
+    // Configurar event listeners
+    req.on('close', () => executeUserEventCleanup('request close'));
+    req.on('error', (error) => {
+      this.logger.error('Error en request de eventos de usuario', error, {
+        userId,
+      });
+      executeUserEventCleanup('request error');
+    });
+    res.on('error', (error) => {
+      this.logger.error('Error en response de eventos de usuario', error, {
+        userId,
+      });
+      executeUserEventCleanup('response error');
+    });
+    res.on('finish', () => executeUserEventCleanup('response finish'));
+  }
+
+  /**
+   * Generar nombre de canal para eventos de usuario
+   */
+  private generateUserChannelName(userId: string): string {
+    return `user:${userId}:events`;
+  }
+
+  /**
+   * Crear cliente SSE simplificado sin dependencia de CurrentUser
+   */
+  // private createUserClient(userId: string, res: Response) {
+  //   // Crear un objeto CurrentUser mínimo para compatibilidad con tu factory existente
+  //   const minimalUser: CurrentUser = {
+  //     id: userId,
+  //     role: Role.CLIENT, // O el rol por defecto que corresponda
+  //   };
+
+  //   // Usar tu factory existente que ya funciona
+  //   return this.clientFactory.createClient(minimalUser, res);
+  // }
+
+  /**
+   * Validar estructura de evento de usuario
+   * Eventos esperados por el frontend:
+   * - TICKET_COMPLETED: { type, ticketId, ... }
+   * - QUEUE_STATUS_UPDATE: { type, ticketCompleted, ... }
+   * - KEEPALIVE_USER: { type, userId, timestamp }
+   */
+  private isValidUserEvent(data: any): boolean {
+    return (
+      data &&
+      typeof data === 'object' &&
+      typeof data.type === 'string' &&
+      data.timestamp &&
+      // Validar tipos específicos que espera el frontend
+      [
+        'TICKET_COMPLETED',
+        'QUEUE_STATUS_UPDATE',
+        'KEEPALIVE_USER',
+        'USER_EVENTS_CONNECTED',
+      ].includes(data.type)
+    );
+  }
+
+  //********************************************* */
 }

@@ -13,7 +13,7 @@ async function bootstrap() {
     ? [
         'https://test.freeq.cl',
         'http://localhost:3001',
-        'http://192.168.1.89:3001',
+        'http://192.168.1.84:3001',
         'localhost:3001',
       ]
     : ['https://freeq.cl'];

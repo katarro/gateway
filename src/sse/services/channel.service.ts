@@ -84,4 +84,11 @@ export class ChannelService implements IChannelManager {
   static generateGlobalChannel(): string {
     return 'global:notifications';
   }
+
+  static generateCompletedTicketsChannel(
+    queueId: string,
+    executiveId: string,
+  ): string {
+    return `queue:${queueId}:executive:${executiveId}:completed`;
+  }
 }
