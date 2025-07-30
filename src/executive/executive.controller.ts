@@ -14,7 +14,7 @@ import { ClientProxy } from '@nestjs/microservices';
 import { AuthGuard } from 'src/auth/guards/auth.guard';
 import { RolesGuard } from 'src/auth/guards/roles.guard';
 import { Roles } from 'src/auth/decorators/roles.decorator';
-import { catchError, firstValueFrom, tap, throwError } from 'rxjs';
+import { catchError, firstValueFrom, throwError } from 'rxjs';
 import {
   NATS_SERVICES,
   REDIS_PUB_CLIENT,
@@ -67,55 +67,13 @@ export class ExecutiveController {
 
   @Post('tickets/:id/completar')
   async completeTicket(@Param('id') id: string, @User() user: any) {
-    const requestId = Math.random().toString(36).substr(2, 9);
-    const timestamp = new Date().toISOString();
-    const startTime = Date.now();
-
-    console.log(
-      `🟡 [GATEWAY-${requestId}] [${timestamp}] ===== REQUEST INICIADO =====`,
-    );
-    console.log(`🟡 [GATEWAY-${requestId}] Ticket: ${id}, Usuario: ${user.id}`);
-    console.log(`🟡 [GATEWAY-${requestId}] Start time: ${startTime}`);
-
     let ticket: any;
     try {
-      console.log(`🟡 [GATEWAY-${requestId}] Enviando a microservicio...`);
-
       ticket = await this.sendMessage('executive.completeTicket', {
         ticketId: id,
         userId: user.id,
       });
-
-      console.log('🟢 [GATEWAY] RESPONSE:', JSON.stringify(ticket, null, 2));
-
-      const endTime = Date.now();
-      const duration = endTime - startTime;
-
-      console.log(
-        `🟢 [GATEWAY-${requestId}] [${new Date().toISOString()}] ===== REQUEST EXITOSO =====`,
-      );
-      console.log(`🟢 [GATEWAY-${requestId}] Duración: ${duration}ms`);
-      console.log(
-        `🟢 [GATEWAY-${requestId}] Response recibida del microservicio:`,
-        JSON.stringify(ticket, null, 2),
-      );
     } catch (error) {
-      const endTime = Date.now();
-      const duration = endTime - startTime;
-
-      console.error(
-        `🔴 [GATEWAY-${requestId}] [${new Date().toISOString()}] ===== REQUEST FALLÓ =====`,
-      );
-      console.error(`🔴 [GATEWAY-${requestId}] Duración: ${duration}ms`);
-      console.error(
-        `🔴 [GATEWAY-${requestId}] Error recibido del microservicio:`,
-        error,
-      );
-      console.error(
-        `🔴 [GATEWAY-${requestId}] Error message:`,
-        error.response?.message || error.message,
-      );
-
       throw error;
     }
 
@@ -123,14 +81,6 @@ export class ExecutiveController {
     const ticketData = ticket?.data;
 
     if (!ticketData) {
-      console.warn(
-        `⚠️ [GATEWAY-${requestId}] No se recibieron datos del ticket`,
-      );
-      const finalEndTime = Date.now();
-      const totalDuration = finalEndTime - startTime;
-      console.log(
-        `🟡 [GATEWAY-${requestId}] PROCESO COMPLETO (sin datos): ${totalDuration}ms`,
-      );
       return ticket;
     }
 
@@ -142,42 +92,15 @@ export class ExecutiveController {
       originalId, // Este es el ID original del ticket
     } = ticketData;
 
-    // Log explícito de variables relevantes
-    console.log(`🟢 [GATEWAY-${requestId}] Datos extraídos del ticket:`);
-    console.log(`🟢 [GATEWAY-${requestId}]   - ticketStatus: ${ticketStatus}`);
-    console.log(`🟢 [GATEWAY-${requestId}]   - queueId: ${queueId}`);
-    console.log(`🟢 [GATEWAY-${requestId}]   - clientUserId: ${clientUserId}`);
-    console.log(`🟢 [GATEWAY-${requestId}]   - originalId: ${originalId}`);
-
     if (ticketStatus !== 'COMPLETED') {
-      console.warn(
-        `⚠️ [GATEWAY-${requestId}] Ticket no se marcó como completado. Status: ${ticketStatus}`,
-      );
-      const finalEndTime = Date.now();
-      const totalDuration = finalEndTime - startTime;
-      console.log(
-        `🟡 [GATEWAY-${requestId}] PROCESO COMPLETO (status no completado): ${totalDuration}ms`,
-      );
       return ticket;
     }
 
     try {
-      console.log(
-        `🟢 [GATEWAY-${requestId}] 🎉 Procesando ticket completado...`,
-      );
-      const processingStart = Date.now();
-
       // Usar originalId o id dependiendo de la estructura
       const ticketIdToUse = originalId || id;
-      console.log(
-        `🟢 [GATEWAY-${requestId}] Usando ticketId: ${ticketIdToUse}`,
-      );
 
       // 1. Registrar ticket completado del ejecutivo
-      console.log(
-        `🟢 [GATEWAY-${requestId}] [${Date.now()}] Registrando ticket completado...`,
-      );
-      const registerStart = Date.now();
 
       const myCompletedCount = await this.registerExecutiveCompletedTicket(
         queueId,
@@ -185,16 +108,7 @@ export class ExecutiveController {
         ticketIdToUse,
       );
 
-      const registerEnd = Date.now();
-      console.log(
-        `🟢 [GATEWAY-${requestId}] Ticket ${ticketIdToUse} registrado como completado. Total hoy: ${myCompletedCount} (${registerEnd - registerStart}ms)`,
-      );
-
       // 2. Notificar a ejecutivos
-      console.log(
-        `🟢 [GATEWAY-${requestId}] [${Date.now()}] Notificando a ejecutivos...`,
-      );
-      const notifyExecStart = Date.now();
 
       await this.notifyExecutiveCompletion(
         queueId,
@@ -203,18 +117,8 @@ export class ExecutiveController {
         myCompletedCount,
       );
 
-      const notifyExecEnd = Date.now();
-      console.log(
-        `🟢 [GATEWAY-${requestId}] Notificación a ejecutivos enviada (${notifyExecEnd - notifyExecStart}ms)`,
-      );
-
       // 3. Desuscribir cliente y notificar (si corresponde)
       if (clientUserId && queueId) {
-        console.log(
-          `🟢 [GATEWAY-${requestId}] [${Date.now()}] Notificando al cliente...`,
-        );
-        const notifyClientStart = Date.now();
-
         await this.eventNotificationService.unsubscribeClientFromQueueAndNotify(
           queueId,
           ticketIdToUse,
@@ -222,45 +126,10 @@ export class ExecutiveController {
           'COMPLETED',
           user.id,
         );
-
-        const notifyClientEnd = Date.now();
-        console.log(
-          `🟢 [GATEWAY-${requestId}] Cliente desuscrito y notificado (${notifyClientEnd - notifyClientStart}ms)`,
-        );
-      } else {
-        console.log(
-          `🟡 [GATEWAY-${requestId}] Sin cliente para notificar (clientUserId: ${clientUserId}, queueId: ${queueId})`,
-        );
       }
-
-      const processingEnd = Date.now();
-      const processingDuration = processingEnd - processingStart;
-
-      console.log(
-        `✅ [GATEWAY-${requestId}] Ticket ${ticketIdToUse} completado. Total hoy: ${myCompletedCount} (procesamiento: ${processingDuration}ms)`,
-      );
     } catch (error) {
-      const processingErrorTime = Date.now();
-      const processingErrorDuration = processingErrorTime - startTime;
-
-      console.error(
-        `❌ [GATEWAY-${requestId}] Error procesando ticket completado después de ${processingErrorDuration}ms:`,
-        error,
-      );
-      // No lanzar error aquí para no afectar la respuesta al cliente
+      console.error('❌ Error procesando ticket completado:', error);
     }
-
-    // Log final de lo que retorna al frontend
-    const finalEndTime = Date.now();
-    const totalDuration = finalEndTime - startTime;
-
-    console.log(
-      `🟢 [GATEWAY-${requestId}] PROCESO COMPLETO: ${totalDuration}ms`,
-    );
-    console.log(
-      `🟢 [GATEWAY-${requestId}] Retornando al frontend:`,
-      JSON.stringify(ticket, null, 2),
-    );
 
     return ticket;
   }
@@ -334,30 +203,9 @@ export class ExecutiveController {
   }
 
   private async sendMessage(pattern: string, data: any) {
-    console.log(`🔵 [SENDMESSAGE] Enviando patrón: ${pattern}`);
-    console.log(`🔵 [SENDMESSAGE] Data:`, data);
-
-    try {
-      const result = await firstValueFrom(
-        this.client.send(pattern, data).pipe(
-          tap((response) => {
-            console.log(`🟢 [SENDMESSAGE] Respuesta recibida:`, response);
-          }),
-          catchError((error) => {
-            console.error(`🔴 [SENDMESSAGE] Error capturado:`, error);
-            return throwError(
-              () => new BadRequestException(error.message ?? error),
-            );
-          }),
-        ),
-      );
-
-      console.log(`🟢 [SENDMESSAGE] Resultado final:`, result);
-      return result;
-    } catch (error) {
-      console.error(`🔴 [SENDMESSAGE] Error en catch:`, error);
-      throw error;
-    }
+    return await firstValueFrom(
+      this.client.send(pattern, data).pipe(catchError(this.handleError)),
+    );
   }
 
   // 🔧 MÉTODOS PRIVADOS DE UTILIDAD:

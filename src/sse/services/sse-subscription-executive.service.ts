@@ -197,9 +197,12 @@ export class SseSubscriptionExecutiveService
 
     return subject.pipe(
       filter((redisData) =>
-        ['TICKET_COMPLETED', 'QUEUE_STATUS_UPDATE', 'KEEPALIVE_USER'].includes(
-          redisData.type,
-        ),
+        [
+          'TICKET_COMPLETED',
+          'QUEUE_STATUS_UPDATE',
+          'KEEPALIVE_USER',
+          'UPDATE_REMAINING_TIME',
+        ].includes(redisData.type),
       ),
       map(
         (redisData) =>

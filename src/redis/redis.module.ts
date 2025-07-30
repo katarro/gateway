@@ -6,9 +6,11 @@ import { RedisService } from './redis.service';
 import { EventNotificationService } from './event-notification.service';
 import { LOGGER_TOKEN } from 'src/sse/interfaces';
 import { LoggerService } from 'src/sse/services/logger.service';
+import { TransportModule } from 'src/transport/transport.module';
 
 @Global()
 @Module({
+  imports: [TransportModule],
   providers: [
     {
       provide: REDIS_PUB_CLIENT,

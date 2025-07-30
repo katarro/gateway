@@ -2,19 +2,23 @@
 // ARCHIVO: src/redis/event-notification.service.ts
 // ============================================
 
-import { Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { Redis } from 'ioredis';
 import {
+  NATS_SERVICES,
   QUEUE_UPDATE_EVENT,
   REDIS_PUB_CLIENT,
   TICKET_CALLED_EVENT,
 } from 'src/config';
 import { RedisService } from './redis.service';
+import { catchError, firstValueFrom, throwError } from 'rxjs';
+import { ClientProxy } from '@nestjs/microservices';
 
 @Injectable()
 export class EventNotificationService {
   constructor(
     @Inject(REDIS_PUB_CLIENT) private readonly redis: Redis,
+    @Inject(NATS_SERVICES) private readonly client: ClientProxy,
     private readonly redisService: RedisService,
   ) {}
 
@@ -108,11 +112,7 @@ export class EventNotificationService {
     executiveId?: string,
   ): Promise<void> {
     try {
-      console.log(
-        `🔌 Desuscribiendo cliente ${clientUserId} de cola ${queueId} - Status: ${status}`,
-      );
-
-      // 1. 🗑️ REMOVER USUARIO DE LA COLA DE REDIS
+      // 1. Remover usuario de la cola en Redis
       const wasRemoved = await this.redisService.removeUserFromQueue(
         queueId,
         clientUserId,
@@ -121,7 +121,7 @@ export class EventNotificationService {
         `🗑️ Cliente ${clientUserId} desuscrito de cola: ${wasRemoved}`,
       );
 
-      // 2. 📤 EVENTO PARA EL CLIENTE ESPECÍFICO
+      // 2. Evento para el cliente específico
       const clientChannel = `user:${clientUserId}:events`;
       await this.publishEvent(clientChannel, 'TICKET_COMPLETED', {
         ticketId,
@@ -131,7 +131,7 @@ export class EventNotificationService {
         executiveId,
       });
 
-      // 3. 📊 EVENTO GENERAL PARA LA COLA
+      // 3. Evento general para la cola
       const queueChannel = `queue:${queueId}`;
       await this.publishEvent(queueChannel, 'QUEUE_STATUS_UPDATE', {
         queueId,
@@ -141,16 +141,61 @@ export class EventNotificationService {
         timestamp: new Date().toISOString(),
       });
 
-      // 4. 🔄 ACTUALIZAR CONTEO DE COLA (automáticamente correcto)
+      // 4. Actualizar conteo de cola
       await this.publishEventUpdateCountInQueue(queueId);
 
-      console.log(
-        `✅ Cliente ${clientUserId} desuscrito y notificado - Ticket ${ticketId} ${status}`,
-      );
+      // 5. Publicar tiempo restante SOLO si el ticket fue completado
+      await this.publishRemainingTimeForTicket(queueId, ticketId, clientUserId);
     } catch (error) {
       console.error(`❌ Error desuscribiendo cliente de cola:`, error);
       throw error;
     }
+  }
+
+  async publishRemainingTimeForTicket(
+    queueId: string,
+    ticketId: string,
+    clientUserId: string,
+  ): Promise<void> {
+    try {
+      // Llamar al microservicio por NATS para obtener el tiempo restante
+      const remainingTime = await this.sendMessage(
+        'client.getRemainingTimeForTicket',
+        {
+          queueId,
+          ticketId,
+          date: new Date().toISOString(),
+        },
+      );
+
+      // Publicar al canal del usuario si se obtuvo resultado
+      if (remainingTime && remainingTime.tiempo_restante !== undefined) {
+        const clientChannel = `user:${clientUserId}:events`;
+        await this.publishEvent(clientChannel, 'UPDATE_REMAINING_TIME', {
+          ticketId,
+          queueId,
+          tiempo_restante: remainingTime.tiempo_restante,
+          unidad: 'minutos',
+          updatedAt: new Date().toISOString(),
+        });
+      } else {
+        console.warn(
+          'No se pudo obtener el tiempo restante del microservicio.',
+        );
+      }
+    } catch (error) {
+      console.error('❌ Error al publicar tiempo restante:', error);
+    }
+  }
+
+  private handleError(error: any) {
+    return throwError(() => new BadRequestException(error.message ?? error));
+  }
+
+  private async sendMessage(pattern: string, data: any) {
+    return await firstValueFrom(
+      this.client.send(pattern, data).pipe(catchError(this.handleError)),
+    );
   }
 }
 /*
