@@ -273,6 +273,7 @@ export class ExecutiveController {
       limit: limitNumber,
     });
   }
+
   @Get('panel-de-control')
   async getControlPanel(@User() user: any) {
     return this.sendMessage('executive.getControlPanel', { userId: user.id });
