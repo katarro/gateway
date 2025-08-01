@@ -8,7 +8,6 @@ import {
   BadRequestException,
   Req,
   Res,
-  HttpStatus,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { envs } from 'src/config/envs';
@@ -52,29 +51,22 @@ export class AuthController {
   async googleAuthCallback(@Req() req: any, @Res() res: any) {
     const user = req.user;
     console.log('Usuario de Google:', user);
+
     if (!user?.email) {
-      return res.status(400).json({ message: 'Autenticación fallida' });
+      // ✅ Redirigir al frontend con error
+      return res.redirect(`${envs.frontend_url}/login?error=auth_failed`);
     }
 
     try {
       console.log('Usuario autenticado:', user);
-      // Convertir el Observable en un valor con firstValueFrom
       const jwt = await this.sendMessage('auth.google', user);
 
-      // Redirige al cliente con el token JWT
-      // res.redirect(`/dashboard?token=${jwt}`);
-
-      // Devuelve el token JWT en la respuesta
-      return res.status(HttpStatus.OK).json({
-        message: 'Inicio de sesión exitoso',
-        access_token: jwt,
-      });
-      // Luego ese token se valida en el frontend e inicia sesion.
+      // ✅ CAMBIO PRINCIPAL: Redirigir al frontend con token
+      return res.redirect(`${envs.frontend_url}/user/home?token=${jwt}`);
     } catch (error) {
       console.error('Error en googleAuthCallback:', error);
-      return res
-        .status(HttpStatus.INTERNAL_SERVER_ERROR)
-        .json({ message: 'Error en la autenticación' });
+      // ✅ Redirigir al frontend con error
+      return res.redirect(`${envs.frontend_url}/login?error=server_error`);
     }
   }
 

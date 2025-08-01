@@ -18,7 +18,7 @@ async function bootstrap() {
         'https://3d02e273c7df.ngrok-free.app',
         'https://udp.freeq.cl',
       ]
-    : ['https://freeq.cl'];
+    : ['https://udp.freeq.cl'];
 
   app.enableCors({
     origin: corsOrigin,

@@ -66,7 +66,7 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
       this.redisMessageHandler,
     );
     const frontendUrls = {
-      development: 'https://udp.freeq.cl',
+      development: 'https://udp.freeq.cl', //https://udp.freeq.cl
       production: 'https://udp.freeq.cl',
       test: 'https://test.freeq.cl',
     };
