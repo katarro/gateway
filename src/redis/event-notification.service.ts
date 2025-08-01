@@ -8,11 +8,14 @@ import {
   NATS_SERVICES,
   QUEUE_UPDATE_EVENT,
   REDIS_PUB_CLIENT,
-  TICKET_CALLED_EVENT,
+  // TICKET_CALLED_EVENT,
 } from 'src/config';
 import { RedisService } from './redis.service';
 import { catchError, firstValueFrom, throwError } from 'rxjs';
 import { ClientProxy } from '@nestjs/microservices';
+import { SseService } from 'src/sse/sse.service';
+import { LOGGER_TOKEN } from 'src/sse/interfaces';
+import { LoggerService } from 'src/sse/services/logger.service';
 
 @Injectable()
 export class EventNotificationService {
@@ -20,25 +23,26 @@ export class EventNotificationService {
     @Inject(REDIS_PUB_CLIENT) private readonly redis: Redis,
     @Inject(NATS_SERVICES) private readonly client: ClientProxy,
     private readonly redisService: RedisService,
+    private readonly sseService: SseService,
+    @Inject(LOGGER_TOKEN) private readonly logger: LoggerService,
   ) {}
 
   // ✅ Publicar evento de ticket actual llamado
   async publishEventUpdateCurrentTicket(ticketNumber: number, queueId: string) {
-    // ✅ Guardar el ticket actual en Redis
-    await this.redis.set(`queue:${queueId}:current`, ticketNumber.toString());
+    // ✅ USAR LA MISMA CLAVE que SseService
+    const currentTicketKey = `queue:${queueId}:current_ticket`;
 
-    // ✅ Publicar evento a clientes esperando
-    await this.redis.publish(
-      `queue:${queueId}`,
-      JSON.stringify({
-        type: TICKET_CALLED_EVENT,
-        queueId,
-        currentTicketNumber: ticketNumber,
-        timestamp: new Date(),
-      }),
-    );
+    // Guardar en Redis
+    await this.redisService.set(currentTicketKey, ticketNumber.toString());
 
-    console.log(`📢 Ticket ${ticketNumber} llamado para cola ${queueId}`);
+    // También llamar al método updateCurrentTicket de SseService
+    await this.sseService.updateCurrentTicket(queueId, ticketNumber);
+
+    this.logger.info('✅ Current ticket actualizado', {
+      queueId,
+      ticketNumber,
+      key: currentTicketKey,
+    });
   }
 
   // ✅ Publicar actualización de conteo de usuarios en cola

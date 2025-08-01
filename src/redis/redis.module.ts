@@ -7,10 +7,12 @@ import { EventNotificationService } from './event-notification.service';
 import { LOGGER_TOKEN } from 'src/sse/interfaces';
 import { LoggerService } from 'src/sse/services/logger.service';
 import { TransportModule } from 'src/transport/transport.module';
+import { SseService } from 'src/sse/sse.service';
+import { SseModule } from 'src/sse/sse.module';
 
 @Global()
 @Module({
-  imports: [TransportModule],
+  imports: [TransportModule, SseModule],
   providers: [
     {
       provide: REDIS_PUB_CLIENT,
@@ -55,8 +57,15 @@ import { TransportModule } from 'src/transport/transport.module';
     RedisService,
     EventNotificationService,
     LoggerService,
+    SseService,
   ],
-  exports: [RedisService, REDIS_PUB_CLIENT, REDIS_SUB_CLIENT],
+  exports: [
+    RedisService,
+    REDIS_PUB_CLIENT,
+    REDIS_SUB_CLIENT,
+    LOGGER_TOKEN,
+    SseService,
+  ],
 })
 export class RedisModule implements OnApplicationShutdown {
   constructor(

@@ -7,7 +7,11 @@ import {
 } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { Redis } from 'ioredis';
-import { REDIS_SUB_CLIENT } from 'src/config';
+import {
+  REDIS_PUB_CLIENT,
+  REDIS_SUB_CLIENT,
+  TICKET_CALLED_EVENT,
+} from 'src/config';
 import { CurrentUser } from 'src/auth/interfaces/current-user.interface';
 import {
   IChannelManager,
@@ -31,9 +35,19 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
   private isInitialized = false;
   private readonly messageHandler: (channel: string, message: string) => void;
   private readonly urlFrontend: string;
+  // 🔧 CREAR CONSTANTE para evitar inconsistencias
+  private static readonly CURRENT_TICKET_KEY_PREFIX = 'queue';
+  private static readonly CURRENT_TICKET_KEY_SUFFIX = 'current_ticket';
+
+  private generateCurrentTicketKey(queueId: string): string {
+    return `${SseService.CURRENT_TICKET_KEY_PREFIX}:${queueId}:${SseService.CURRENT_TICKET_KEY_SUFFIX}`;
+  }
 
   constructor(
-    @Inject(REDIS_SUB_CLIENT) private readonly redis: Redis,
+    // @Inject(REDIS_SUB_CLIENT) private readonly redis: Redis,
+    @Inject(REDIS_SUB_CLIENT) private readonly redisSub: Redis, // ✅ Para subscribe
+    @Inject(REDIS_PUB_CLIENT) private readonly redisPub: Redis, // ✅ Para publish
+
     @Inject(CHANNEL_MANAGER_TOKEN)
     private readonly channelManager: IChannelManager,
     @Inject(REDIS_MESSAGE_HANDLER_TOKEN)
@@ -52,8 +66,8 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
       this.redisMessageHandler,
     );
     const frontendUrls = {
-      development: 'http://localhost:3001',
-      production: 'https://freeq.cl',
+      development: 'https://udp.freeq.cl',
+      production: 'https://udp.freeq.cl',
       test: 'https://test.freeq.cl',
     };
 
@@ -69,7 +83,7 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
     this.logger.info('Inicializando SseService...');
 
     // Registrar listener de Redis UNA VEZ
-    this.redis.on('message', this.messageHandler);
+    this.redisSub.on('message', this.messageHandler);
     this.logger.info('Listener de Redis registrado');
 
     this.isInitialized = true;
@@ -80,7 +94,7 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
     this.logger.info('Cerrando SseService...');
 
     // Limpiar listener
-    this.redis.off('message', this.messageHandler);
+    this.redisSub.off('message', this.messageHandler);
 
     // Desuscribirse de todos los canales
     await this.channelManager.unsubscribeFromAll();
@@ -166,7 +180,7 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
       // ✅ Obtener el estado actual de la cola desde Redis o base de datos
       const currentState = await this.getCurrentQueueState(queueId);
 
-      if (currentState?.currentTicketNumber) {
+      if (currentState && currentState.currentTicketNumber > 0) {
         const initialStateMessage = {
           type: 'CURRENT_STATE',
           currentTicketNumber: currentState.currentTicketNumber,
@@ -191,7 +205,7 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
           type: 'QUEUE_STATUS',
           queueId,
           message: 'No hay tickets siendo atendidos actualmente',
-          currentTicketNumber: null,
+          currentTicketNumber: 0,
           waitingTickets: 0,
           timestamp: new Date().toISOString(),
         };
@@ -224,22 +238,29 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
    */
   // En tu SseService, reemplaza getCurrentQueueState con esto:
   private async getCurrentQueueState(queueId: string): Promise<{
-    currentTicketNumber: number | null;
+    currentTicketNumber: number;
     waitingTickets: number;
     estimatedWaitTime: number;
-  } | null> {
+  }> {
     try {
       this.logger.info('🔍 Buscando estado actual de la cola', { queueId });
 
-      // 🔍 OPCIÓN SIMPLE: Usar una clave Redis específica para el estado actual
-      const currentTicketKey = `queue:${queueId}:current`;
+      // ✅ USAR LA MISMA CLAVE que updateCurrentTicket()
+      const currentTicketKey = this.generateCurrentTicketKey(queueId);
       const currentTicketStr = await this.redisService.get(currentTicketKey);
+
+      this.logger.info('🔑 Clave Redis usada:', {
+        queueId,
+        key: currentTicketKey,
+        value: currentTicketStr,
+      });
 
       if (currentTicketStr) {
         const currentTicketNumber = parseInt(currentTicketStr, 10);
         this.logger.info('✅ Estado actual encontrado en Redis', {
           queueId,
           currentTicketNumber,
+          key: currentTicketKey,
         });
 
         return {
@@ -249,16 +270,26 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
         };
       }
 
-      this.logger.warn('⚠️ No se encontró estado actual en Redis', { queueId });
-      return null;
+      this.logger.warn('⚠️ No se encontró estado actual en Redis', {
+        queueId,
+        key: currentTicketKey,
+      });
+      return {
+        currentTicketNumber: 0, // ← 0 en lugar de null
+        waitingTickets: 0,
+        estimatedWaitTime: 0,
+      };
     } catch (error) {
       this.logger.error('❌ Error obteniendo estado de la cola', error, {
         queueId,
       });
-      return null;
+      return {
+        currentTicketNumber: 0, // ← 0 en lugar de null
+        waitingTickets: 0,
+        estimatedWaitTime: 0,
+      };
     }
   }
-
   /**
    * ✅ NUEVO: Método para actualizar el ticket actual (cuando el ejecutivo cambia de número)
    */
@@ -272,13 +303,19 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
         newTicketNumber,
       });
 
-      // 1. Guardar en Redis el nuevo ticket actual
-      const currentTicketKey = `queue:${queueId}:current_ticket`;
+      // ✅ USAR LA MISMA CLAVE que getCurrentQueueState()
+      const currentTicketKey = this.generateCurrentTicketKey(queueId);
       await this.redisService.set(currentTicketKey, newTicketNumber.toString());
+
+      this.logger.info('✅ Ticket actual guardado en Redis', {
+        queueId,
+        newTicketNumber,
+        key: currentTicketKey,
+      });
 
       // 2. Enviar evento a todos los clientes conectados
       const ticketCalledEvent = {
-        type: 'TICKET_CALLED_EVENT',
+        type: TICKET_CALLED_EVENT,
         currentTicketNumber: newTicketNumber,
         queueId,
         message: `Ticket ${newTicketNumber} llamado`,
@@ -287,7 +324,7 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
 
       // 3. Publicar en Redis para que llegue a todos los clientes SSE
       const channel = this.generateChannelName(queueId);
-      await this.redis.publish(channel, JSON.stringify(ticketCalledEvent));
+      await this.redisPub.publish(channel, JSON.stringify(ticketCalledEvent));
 
       this.logger.info('Evento de ticket llamado enviado', {
         queueId,
@@ -446,7 +483,7 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
       );
 
       // 8. Registrar el handler en Redis
-      this.redis.on('message', userMessageHandler);
+      this.redisSub.on('message', userMessageHandler);
 
       // 9. Configurar keepalive
       const keepAliveManager = this.createUserKeepAliveManager(
@@ -609,7 +646,7 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
         clearInterval(keepAliveManager);
 
         // Remover handler de mensajes específico directamente de Redis
-        this.redis.off('message', messageHandler);
+        this.redisSub.off('message', messageHandler);
 
         // Desuscribirse del canal del usuario
         await this.channelManager.unsubscribeFromChannel(userChannel);

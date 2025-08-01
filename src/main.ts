@@ -15,6 +15,8 @@ async function bootstrap() {
         'http://localhost:3001',
         'http://192.168.1.84:3001',
         'localhost:3001',
+        'https://3d02e273c7df.ngrok-free.app',
+        'https://udp.freeq.cl',
       ]
     : ['https://freeq.cl'];
 

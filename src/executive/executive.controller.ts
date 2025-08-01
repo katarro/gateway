@@ -44,23 +44,103 @@ export class ExecutiveController {
   // ✅✅✅✅ Llamar al siguiente (avanza la cola y emite evento)
   @Post('tickets/llamar-siguiente')
   async callNextTicket(@User() user: any) {
-    const result = await this.sendMessage('executive.callNextTicket', {
-      userId: user.id,
-    });
+    console.log('🎯 INICIO callNextTicket - userId:', user?.id);
 
-    const ticketNumber = result?.ticket?.ticketNumber;
+    let result;
+
+    try {
+      console.log(
+        '📡 Enviando mensaje a microservicio executive.callNextTicket:',
+        {
+          userId: user.id,
+        },
+      );
+
+      result = await this.sendMessage('executive.callNextTicket', {
+        userId: user.id,
+      });
+
+      console.log('✅ Respuesta del microservicio recibida:', {
+        hasResult: !!result,
+        resultKeys: result ? Object.keys(result) : [],
+        fullResult: result,
+      });
+    } catch (error) {
+      console.error('❌ Error en sendMessage:', {
+        message: error.message,
+        stack: error.stack,
+        fullError: error,
+      });
+      throw error;
+    }
+
+    // const ticketNumber = result?.ticket?.ticketNumber;
+    const ticketNumber = result?.ticket?.ticketNumber || result?.ticketNumber;
+
     const queueId = result?.queueId;
 
+    console.log('🔍 Extrayendo datos del resultado:', {
+      ticketNumber,
+      queueId,
+      hasTicketNumber: !!ticketNumber,
+      hasQueueId: !!queueId,
+      ticketPath: 'result?.ticket?.ticketNumber',
+      queuePath: 'result?.queueId',
+    });
+
     if (ticketNumber && queueId) {
-      await this.eventNotificationService.publishEventUpdateCurrentTicket(
-        ticketNumber,
-        queueId,
+      console.log(
+        '✅ Datos válidos encontrados, procediendo a actualizar Redis y eventos...',
       );
 
-      await this.eventNotificationService.publishEventUpdateCountInQueue(
+      try {
+        console.log('📡 Llamando publishEventUpdateCurrentTicket:', {
+          ticketNumber,
+          queueId,
+        });
+
+        await this.eventNotificationService.publishEventUpdateCurrentTicket(
+          ticketNumber,
+          queueId,
+        );
+
+        console.log('✅ publishEventUpdateCurrentTicket completado');
+      } catch (error) {
+        console.error('❌ Error en publishEventUpdateCurrentTicket:', {
+          message: error.message,
+          stack: error.stack,
+        });
+      }
+
+      try {
+        console.log('📡 Llamando publishEventUpdateCountInQueue:', {
+          queueId,
+        });
+
+        await this.eventNotificationService.publishEventUpdateCountInQueue(
+          queueId,
+        );
+
+        console.log('✅ publishEventUpdateCountInQueue completado');
+      } catch (error) {
+        console.error('❌ Error en publishEventUpdateCountInQueue:', {
+          message: error.message,
+          stack: error.stack,
+        });
+      }
+    } else {
+      console.warn('⚠️ Datos insuficientes para actualizar Redis:', {
+        ticketNumber,
         queueId,
-      );
+        mensaje: 'No se actualizará current_ticket ni count',
+        resultCompleto: result,
+      });
     }
+
+    console.log('🏁 FIN callNextTicket - retornando resultado:', {
+      hasResult: !!result,
+      resultKeys: result ? Object.keys(result) : [],
+    });
 
     return result;
   }
